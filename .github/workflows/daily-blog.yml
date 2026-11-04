@@ -1,4 +1,4 @@
-name: Daily Blog Post to Blogger (AirLLM Edition)
+name: ReadContent Blogger Auto Post
 
 on:
   schedule:
@@ -10,92 +10,58 @@ on:
     - cron: '0 19 * * *'   # 19:00 UTC (00:30 IST)
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   generate-and-post:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.15.2'
+          python-version: '3.12'
           cache: 'pip'
 
-      # Cache Ollama (fallback models)
-      - name: Cache Ollama
-        id: cache-ollama
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.ollama
-            /usr/local/bin/ollama
-          key: ${{ runner.os }}-ollama
-
-      - name: Install Ollama (if not cached)
-        if: steps.cache-ollama.outputs.cache-hit != 'true'
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          echo "/usr/local/bin" >> $GITHUB_PATH
-
-      - name: Start Ollama service
-        run: |
-          /usr/local/bin/ollama serve &
-          sleep 10
-          for i in {1..10}; do
-            if curl -s http://localhost:11434/api/tags > /dev/null; then
-              echo "✅ Ollama ready"
-              break
-            fi
-            echo "Waiting for Ollama... ($i/10)"
-            sleep 3
-          done
-
-      - name: Pull Ollama models
-        run: |
-          /usr/local/bin/ollama pull llama3:8b
-          /usr/local/bin/ollama pull phi
-
-      # Cache AirLLM models
-      - name: Cache AirLLM
-        id: cache-airllm
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/airllm
-          key: ${{ runner.os }}-airllm-${{ hashFiles('scripts/generate_post.py') }}
-          restore-keys: |
-            ${{ runner.os }}-airllm-
-
-      # Install Python dependencies with retry (in case of network issues)
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # Install PyTorch (CUDA or CPU fallback)
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 || \
-            pip install torch torchvision torchaudio  # fallback to CPU version
-          pip install airllm feedparser requests google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client pillow
-        shell: bash
-
-      # Debug step (optional, shows installed packages)
-      - name: Debug installed packages
-        run: |
-          pip list | grep -E 'torch|airllm|google|feedparser|requests'
-          echo "AirLLM installed: $(python -c 'import airllm; print("✅")' 2>/dev/null || echo "❌")"
-        continue-on-error: true
+          pip install -r requirements.txt
 
       - name: Generate and post to Blogger
         env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          GOOGLE_CSE_API_KEY: ${{ secrets.GOOGLE_CSE_API_KEY }}
+          GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
         run: |
           mkdir -p .blog-cache _posts
           python scripts/generate_post.py
+
+      - name: Commit and push changes
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add _posts/ .blog-cache/ index.md
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-published post: $(date -u +'%Y-%m-%d %H:%M:%S UTC') [skip ci]"
+            git push
+          fi
 
       - name: Upload post artifact
         if: always()

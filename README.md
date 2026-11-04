@@ -1,149 +1,140 @@
-🤖 AI Blogger – Fully Automated Blog Posting System
+# 📰 ReadContent Blogger Auto Post — Automated Journalism Engine
 
-This repository contains a complete automation system that generates and publishes high‑quality blog posts to your Blogger blog using AI. It runs on GitHub Actions (free for public repositories) and uses Ollama (with optional AirLLM) to create engaging, long‑form content. The system also fetches relevant images, adds your logo, improves SEO, and notifies Google for faster indexing.
+An autonomous investigative journalism system engineered specifically for **[readcontext.blogspot.com](https://readcontext.blogspot.com)** (Blog ID: `6965563738161457805`). Powered by **NVIDIA NIM** cloud microservices with an active 5-model fallback chain, real multi-platform web research (Hacker News, Reddit, Slashdot, Lemmy, Bluesky, Quora, X, Product Hunt, TechCrunch, The Verge), verified real documentary photo curation via multimodal vision models, and strict **Google AdSense & Publisher Policy Safeguards**.
 
-✨ Features
+Runs seamlessly on **GitHub Actions** 6 times daily at zero hosting cost.
 
-6 posts daily at optimal reader engagement times (configurable).
-1500–2000 word articles with a clear structure (synopsis, introduction, analysis, conclusion).
-AI models: Uses tinyllama (fast) by default, falls back to phi or llama3:8b if needed.
-Images: Automatically extracts images from RSS feeds, falls back to Unsplash or Picsum.
-Logo: Adds your custom logo (centered) at the bottom of every post.
-SEO enhancements:
+---
 
-Meta descriptions from the AI‑generated summary.
-Internal links to related posts.
-Google sitemap ping after each post.
-Optional Google Search Console submission via Indexing API.
-Local backups: Every generated post is saved as a Markdown file and uploaded as a GitHub Actions artifact.
-Fully configurable: Modify prompts, post length, models, and schedules easily.
+## 🛡️ Content Compliance & AdSense Policy Guardrails
 
-📋 Prerequisites
+The engine enforces strict editorial standards to guarantee high-quality monetization eligibility:
 
-Before you begin, make sure you have:
+1. **🚫 Zero Graphic Violence**:
+   - Automated screening filters out any text or imagery depicting blood, weapons, casualties, injuries, warfare, or physical destruction.
+   - Multimodal vision model screens out gory or weapon-laden imagery before publication.
 
-A GitHub account (free).
-A Blogger blog (create one at blogger.com).
-Your Blogger Blog ID (found in Settings → Basic → Blog ID).
-Google Cloud Project with Blogger API enabled and OAuth 2.0 credentials (see setup guide).
-(Optional) Google Search Console service account for automatic indexing (see guide).
-A logo image (PNG format) if you want branding.
+2. **🚫 Zero Geopolitical Bias**:
+   - Excludes partisan battlefield updates and active military conflict commentary.
+   - Enforces neutral, objective, third-person journalistic prose without emotional or derogatory language.
 
-🚀 Quick Start
+3. **🚫 Zero Copyright Infringement & Piracy**:
+   - Articles are 100% original journalistic syntheses written by AI; no copy-pasting of third-party articles.
+   - Prohibits cracked software, keygens, torrents, warez, or paywall bypass links.
 
-1. Fork or Clone This Repository
+4. **🚫 Zero Misinformation & Financial Schemes**:
+   - Relies strictly on verified benchmarks, published research, and reputable tech press wires.
+   - Blocks unscientific medical cures, conspiracy theories, and get-rich-quick/crypto schemes.
 
-bash
-git clone https://github.com/adavidjulius/Automatic-Blogger-Poster.git
-cd Automatic-Blogger-Poster
-2. Add Required Files to Your Repository
+5. **🚫 Zero Advertising & Click Violations**:
+   - Zero click solicitations: Never asks readers to click ads or includes text like "support us by clicking here."
+   - Zero deceptive placements: Formats articles with native semantic HTML cards without deceptive buttons or fake download prompts.
+   - Clean traffic: Directly pings standard Google Search sitemaps and Search Console indexing.
 
-Place your logo as logo.png in the root folder.
-Ensure the following files exist (they are already in the repo):
+6. **🚫 Anti-Thin-Text Enforcement**:
+   - Rejects thin 200-word summaries or raw unedited text blocks.
+   - Enforces exhaustive, multi-section coverage (**1,400 to 2,200 words**) with automatic depth expansion if a draft falls below editorial thresholds.
 
-.github/workflows/daily-blog.yml – the GitHub Actions workflow.
-scripts/generate_post.py – the main Python script.
-requirements.txt – Python dependencies.
-3. Configure GitHub Secrets
+---
 
-Go to your repository Settings → Secrets and variables → Actions and add the following secrets:
+## ⚡ NVIDIA NIM Microservices Architecture
 
-Secret Name	Description
-BLOGGER_BLOG_ID	Your Blogger blog ID (a number, e.g., 6965563738161457805).
-GOOGLE_CLIENT_ID	OAuth 2.0 Client ID from Google Cloud Console.
-GOOGLE_CLIENT_SECRET	OAuth 2.0 Client Secret.
-GOOGLE_REFRESH_TOKEN	Refresh token for Blogger API (obtained via OAuth 2.0 Playground).
-GSC_SERVICE_ACCOUNT_JSON	(Optional) Full JSON key of your Google Search Console service account.
-4. Customize the Workflow (Optional)
+- **Serverless API Speed**: High-velocity generation via NVIDIA NIM (`https://integrate.api.nvidia.com/v1`).
+- **Active 5-Model Fallback Chain**: If any model encounters rate limits, timeouts, or transient errors mid-generation, the next model seamlessly takes over:
+  1. `nvidia/nemotron-3.5-bolt-e4b` *(Primary: Blazing speed & tool use)*
+  2. `nvidia/nemotron-3-ultra-550b-a55b` *(Secondary: Frontier 550B MoE narrative depth)*
+  3. `poolside/laguna-xs-2.1` *(Tertiary: Fast structured technical journalism)*
+  4. `minimaxai/minimax-m3.1-flash` *(Quaternary: High-throughput flash fallback)*
+  5. `google/diffusiongemma-26b-a4b-it` *(Quinary: Multimodal text & vision)*
+- **Multimodal Vision Verification**: Uses `google/diffusiongemma-26b-a4b-it` to inspect documentary visuals, confirm topic relevance, screen out social media share icons/buttons, and author descriptive photo captions.
+- **Deduplication Engine**: Caches published stories in `.blog-cache/posted_history.json` and scans `_posts/` to ensure no duplicate stories are published across scheduled runs.
 
-Edit .github/workflows/daily-blog.yml to change posting times (cron syntax) or any other settings.
+---
 
-5. Push and Wait
+## 📑 Essential Compliance Pages (Required for AdSense)
 
-Commit and push all changes to your default branch (usually main). The workflow will run automatically at the scheduled times. You can also trigger it manually from the Actions tab.
+To comply with AdSense requirements, the `pages/` directory includes pre-written, styled compliance pages formatted with ReadContext branding (`#F36C21` brand accents, Playfair Display typography, responsive cards):
 
-🔧 How It Works
+- `pages/privacy-policy.html`: Complete GDPR, CCPA, and Google AdSense DART cookies disclosure.
+- `pages/about-us.html`: Mission statement, editorial standards, zero-sensationalism, and fact-checking policy.
+- `pages/contact.html`: Newsroom contact emails, corrections policy, turnaround time.
+- `pages/terms-of-service.html`: Intellectual property, fair use, and external link disclaimers.
 
-GitHub Actions triggers the workflow at the scheduled times (or manually).
-Ollama is installed and started on the runner.
-The script generate_post.py:
+### How to Publish Essential Pages to Blogger:
 
-Fetches trending topics from RSS feeds (Hacker News, BBC, TechCrunch).
-Selects a random topic.
-Extracts an image from the feed (if available) or uses Unsplash/Picsum.
-Generates a 1500‑2000 word blog post using Ollama (primary: tinyllama, fallbacks: phi, llama3:8b).
-Creates a summary for meta description and internal linking.
-Publishes the post to Blogger via the API.
-Pings Google with the sitemap URL.
-(Optional) Submits the new URL to Google Search Console.
-Saves a local backup in the _posts/ folder.
-The post is also uploaded as a GitHub Actions artifact for safekeeping.
+**Method A: Automatic (with Blogger API credentials configured)**
+```bash
+python scripts/generate_post.py --publish-pages
+```
 
-🎨 Customization
+**Method B: Blogger Dashboard (Manual)**
+1. Log in to [Blogger Dashboard](https://www.blogger.com).
+2. Go to **Pages** → click **New page**.
+3. In the top-left of the post editor, switch from **Compose view** to **HTML view** (`<>`).
+4. Paste the content of each file in `pages/` and set the page title:
+   - `pages/privacy-policy.html` → Title: **Privacy Policy**
+   - `pages/about-us.html` → Title: **About Us**
+   - `pages/contact.html` → Title: **Contact Us**
+   - `pages/terms-of-service.html` → Title: **Terms of Service**
+5. Click **Publish**, then add these pages to your blog's top navigation bar or footer widget via **Layout** → **Page List / Link List**.
 
-Changing Post Length
+---
 
-In generate_post.py, modify the num_predict parameter in the API call (e.g., 2048 for ~1500 words). Also adjust the prompt's length instructions.
+## 🚀 Quick Setup & Deployment
 
-Switching AI Models
+### 1. Configure GitHub Secrets
 
-Change the OLLAMA_PRIMARY, OLLAMA_SECONDARY, and OLLAMA_TERTIARY variables at the top of the script. Popular models:
+In your GitHub repository, navigate to **Settings → Secrets and variables → Actions** and add:
 
-tinyllama (fast, 1.1B)
-phi (2.7B)
-llama3:8b (8B, better quality but slower)
-mistral:7b (7B)
-Adding More RSS Sources
+| Secret Name | Required? | Description |
+|---|---|---|
+| `BLOGGER_BLOG_ID` | Required | Your Blogger Blog ID: `6965563738161457805` |
+| `GOOGLE_CLIENT_ID` | Required | OAuth 2.0 Client ID from Google Cloud Console. |
+| `GOOGLE_CLIENT_SECRET` | Required | OAuth 2.0 Client Secret from Google Cloud Console. |
+| `GOOGLE_REFRESH_TOKEN` | Required | Refresh token with `https://www.googleapis.com/auth/blogger` scope. |
+| `NVIDIA_API_KEY` | Optional | Your NVIDIA NIM API key (defaults to built-in key if omitted). |
+| `GSC_SERVICE_ACCOUNT_JSON` | Optional | Service account JSON key for instant Google Search Console indexing. |
+| `UNSPLASH_ACCESS_KEY` | Optional | Free API access key from Unsplash Developers. |
+| `GOOGLE_CSE_API_KEY` | Optional | Google Custom Search API key. |
+| `GOOGLE_CSE_ID` | Optional | Google Programmable Search Engine ID. |
 
-Edit the sources list in get_trending_topics() to include your preferred feeds.
+### 2. Posting Schedule
 
-Adjusting Posting Schedule
+The workflow in `.github/workflows/daily-blog.yml` runs 6 times daily at peak engagement hours:
+- `03:30 UTC` *(09:00 IST)*
+- `07:00 UTC` *(12:30 IST)*
+- `12:30 UTC` *(18:00 IST)*
+- `13:00 UTC` *(18:30 IST)*
+- `16:30 UTC` *(22:00 IST)*
+- `19:00 UTC` *(00:30 IST)*
 
-Modify the cron lines in .github/workflows/daily-blog.yml. The current schedule is:
+You can also trigger a publication manually anytime via the **Actions** tab by selecting **"Daily Blog Post to Blogger (NVIDIA AI Edition)"** → **"Run workflow"**.
 
-30 3 * * * → 03:30 UTC
-0 7 * * * → 07:00 UTC
-30 12 * * * → 12:30 UTC
-0 13 * * * → 13:00 UTC
-30 16 * * * → 16:30 UTC
-0 19 * * * → 19:00 UTC
+### 3. Push to GitHub
 
-🔑 Setting Up Google OAuth 2.0 for Blogger
+```bash
+git remote add origin https://github.com/adavidjulius/<your-repo-name>.git
+git push -u origin main
+```
 
-Go to the Google Cloud Console.
-Create a new project (or select an existing one).
-Enable the Blogger API v3.
-Go to APIs & Services → Credentials.
-Click + CREATE CREDENTIALS → OAuth client ID.
-Choose Web application, give it a name, and add https://developers.google.com/oauthplayground as an Authorized redirect URI.
-Note your Client ID and Client Secret.
-Visit the OAuth 2.0 Playground.
+---
 
-Click the gear icon, check "Use your own OAuth credentials", and enter your Client ID and Secret.
-In the left panel, select Blogger API v3 and choose the scope https://www.googleapis.com/auth/blogger.
-Click Authorize APIs, log in with your blog owner account, and grant permission.
-Click Exchange authorization code for tokens.
-Copy the refresh token.
-Now add these values as GitHub secrets.
+## 🛠️ Local Testing
 
-📈 (Optional) Google Search Console Integration
+To run the generation pipeline on your local machine:
 
-To automatically submit new posts to Google for faster indexing:
+```bash
+# 1. Activate the virtual environment
+source .venv/bin/activate
 
-In the Google Cloud Console, enable the Indexing API.
-Create a service account (IAM & Admin → Service Accounts) and download its JSON key.
-Add the service account email as an owner in your Search Console property (Settings → Users and permissions).
-Add the entire JSON key as the GitHub secret GSC_SERVICE_ACCOUNT_JSON.
+# 2. Run the generator (runs in test/generation mode if Google secrets are absent)
+python scripts/generate_post.py
+```
 
-🐛 Troubleshooting
+Generated articles are saved as markdown archives in `_posts/` and the cache is updated in `.blog-cache/`.
 
-Issue	Solution
-Workflow fails with "No such file or directory"	Ensure scripts/generate_post.py exists in your repository.
-Model generation times out	Increase TIMEOUT_SECONDS in the script, or use a smaller model like tinyllama.
-Google ping returns 404	The sitemap URL may be incorrect. The script auto‑detects the correct one, but you can manually set SITEMAP_URL in the script.
-Search Console API returns 401	Verify that the service account email is added as an owner in Search Console and that the JSON secret is correctly pasted.
-AirLLM not installed	The workflow installs AirLLM; check the "Install Python dependencies" step logs for errors. If it fails, the script falls back to Ollama.
+---
 
-📄 License
+## 📄 License
 
-This project is open source and available under the MIT License.
+Open source under the [MIT License](LICENSE).

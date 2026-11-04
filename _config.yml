@@ -1,5 +1,6 @@
-title: My AI Blogger
-description: Automatically generated AI blog posts daily
+title: ReadContent Blogger Auto Post
+description: Autonomous Multi-Platform Tech Journalism Engine for readcontext.blogspot.com
+url: https://readcontext.blogspot.com
 theme: minima
 plugins:
   - jekyll-feed
