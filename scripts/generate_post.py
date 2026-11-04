@@ -1214,7 +1214,6 @@ Respond in JSON format:
             <div style="margin-top:48px; padding-top:24px; border-top:1px solid rgba(0,0,0,0.08); text-align:center;">
                 <img src="data:image/png;base64,{logo_b64}" alt="ReadContext" style="max-height:42px; margin:0 auto 10px; display:block; opacity:0.9;" />
                 <div style="font-size:12px; color:#999; letter-spacing:1px; text-transform:uppercase;">
-                    Independent Automated Tech Journalism · Powered by NVIDIA NIM
                 </div>
             </div>
             '''
