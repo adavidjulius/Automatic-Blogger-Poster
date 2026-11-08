@@ -27,6 +27,8 @@ import re
 import traceback
 import urllib.parse
 import unicodedata
+import hashlib
+from difflib import SequenceMatcher
 from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -151,6 +153,19 @@ def get_posted_history():
                     history_titles.add(m.group(1).strip().lower())
         except Exception:
             pass
+
+    # Also poll the live Blogger feed to catch any articles published in previous runs
+    try:
+        live_feed_url = f"{BLOG_URL}/feeds/posts/default?alt=json&max-results=50"
+        resp = SESSION.get(live_feed_url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            for entry in data.get("feed", {}).get("entry", []):
+                t = entry.get("title", {}).get("$t", "")
+                if t:
+                    history_titles.add(t.strip().lower())
+    except Exception:
+        pass
 
     return history_titles, history_urls
 
@@ -278,18 +293,19 @@ def log_err(step, error, details=None):
 
 def extract_keywords(title, description=""):
     """Extract significant topic keywords for cross-matching and search."""
+    # Retain meaningful words like 'ai', 'cfo', 'ceo', 'fbi', 'faa' by allowing 2+ chars
+    # Exclude only truly generic grammatical stop words
     stop_words = {
         "the", "a", "an", "is", "are", "was", "were", "of", "in", "on", "at",
         "to", "for", "with", "this", "that", "these", "those", "and", "or",
         "but", "how", "what", "when", "why", "who", "will", "can", "has",
-        "have", "its", "it", "not", "from", "been", "more", "new", "about",
-        "just", "than", "into", "over", "after", "also", "may", "some",
-        "could", "would", "should", "most", "all", "one", "two", "first",
-        "says", "said", "like", "year", "make", "take", "post", "read",
-        "shows", "shown", "show", "release", "releases"
+        "have", "its", "it", "not", "from", "been", "about", "just", "than",
+        "into", "over", "after", "also", "may", "some", "could", "would",
+        "should", "most", "all", "one", "two", "says", "said", "like", "year",
+        "make", "take", "post", "read", "shows", "shown", "show"
     }
     raw = f"{title} {description}"
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', raw)
+    words = re.findall(r'\b[a-zA-Z0-9\$\%]{2,}\b', raw)
     filtered = [w.lower() for w in words if w.lower() not in stop_words]
     deduped = []
     seen = set()
@@ -297,7 +313,86 @@ def extract_keywords(title, description=""):
         if w not in seen:
             seen.add(w)
             deduped.append(w)
-    return deduped[:6]
+    return deduped[:10]
+
+
+def title_similarity(t1, t2):
+    """
+    Compute comprehensive similarity between two titles using multiple metrics:
+    1. SequenceMatcher ratio (character-level fuzzy match)
+    2. Jaccard similarity of extracted keywords
+    3. Token overlap ratio
+    """
+    if not t1 or not t2:
+        return 0.0
+    
+    t1_clean = re.sub(r'[^a-z0-9\s]', '', t1.lower()).strip()
+    t2_clean = re.sub(r'[^a-z0-9\s]', '', t2.lower()).strip()
+    
+    if t1_clean == t2_clean:
+        return 1.0
+
+    # 1. SequenceMatcher
+    seq_ratio = SequenceMatcher(None, t1_clean, t2_clean).ratio()
+
+    # 2. Keyword Jaccard
+    kw1 = set(extract_keywords(t1))
+    kw2 = set(extract_keywords(t2))
+    if kw1 and kw2:
+        jaccard = len(kw1 & kw2) / len(kw1 | kw2)
+        overlap = len(kw1 & kw2) / min(len(kw1), len(kw2))
+    else:
+        jaccard = 0.0
+        overlap = 0.0
+
+    # 3. Normalized token set
+    tokens1 = set(t1_clean.split())
+    tokens2 = set(t2_clean.split())
+    token_jaccard = len(tokens1 & tokens2) / max(len(tokens1 | tokens2), 1)
+
+    # Combined composite score
+    composite = max(seq_ratio, (overlap * 0.6 + jaccard * 0.4), token_jaccard)
+    return composite
+
+
+def is_duplicate_story(title, url, posted_titles, posted_urls, threshold=0.52):
+    """
+    Checks if a story is a duplicate of any previously posted story.
+    Returns (is_duplicate, matched_title, similarity_score).
+    """
+    norm_title = title.strip().lower()
+    norm_url = (url or "").strip().lower()
+
+    # Exact URL match
+    if norm_url and norm_url in posted_urls:
+        return True, "URL match", 1.0
+
+    # Canonicalize Bluesky / aggregator URLs that wrap another URL
+    for p_url in posted_urls:
+        # Check if the URLs point to the same story path
+        if norm_url and p_url:
+            p1 = urllib.parse.urlparse(norm_url).path.rstrip('/')
+            p2 = urllib.parse.urlparse(p_url).path.rstrip('/')
+            if len(p1) > 15 and p1 == p2:
+                return True, "URL path match", 1.0
+
+    # Exact title match
+    if norm_title in posted_titles:
+        return True, norm_title, 1.0
+
+    # Fuzzy title matching
+    best_score = 0.0
+    best_match = ""
+    for pt in posted_titles:
+        score = title_similarity(norm_title, pt)
+        if score > best_score:
+            best_score = score
+            best_match = pt
+
+    if best_score >= threshold:
+        return True, best_match, best_score
+
+    return False, "", best_score
 
 
 def clean_text(html_content):
@@ -682,67 +777,186 @@ class MultiPlatformCollector:
         # Deduplicate against previous publications to ensure 100% fresh content
         posted_titles, posted_urls = get_posted_history()
         fresh_stories = []
+        batch_seen_titles = []
+
         for s in all_stories:
-            norm_title = s['title'].strip().lower()
-            norm_url = s.get('source_url', '').strip().lower()
-            if norm_title in posted_titles or (norm_url and norm_url in posted_urls):
+            norm_title = s['title'].strip()
+            norm_url = s.get('source_url', '').strip()
+
+            # 1. Check against historical posts
+            is_dup, matched_title, score = is_duplicate_story(norm_title, norm_url, posted_titles, posted_urls, threshold=0.52)
+            if is_dup:
+                log("⏭️", f"Deduplicated (Historical): '{norm_title[:45]}...' matches '{matched_title[:45]}...' (sim: {score:.2f})")
                 continue
-            # Also check significant keyword overlap
-            kw_s = set(extract_keywords(norm_title))
-            is_dup = False
-            for pt in posted_titles:
-                kw_p = set(extract_keywords(pt))
-                if kw_s and kw_p and len(kw_s & kw_p) >= min(len(kw_s), 3) and len(kw_s & kw_p) / max(len(kw_s), 1) > 0.7:
-                    is_dup = True
+
+            # 2. Check against other stories already chosen in this batch
+            is_batch_dup = False
+            for seen in batch_seen_titles:
+                sim = title_similarity(norm_title, seen)
+                if sim >= 0.52:
+                    is_batch_dup = True
+                    log("⏭️", f"Deduplicated (Batch): '{norm_title[:45]}...' duplicates higher-ranked story '{seen[:45]}...' (sim: {sim:.2f})")
                     break
-            if not is_dup:
+
+            if not is_batch_dup:
                 fresh_stories.append(s)
+                batch_seen_titles.append(norm_title)
 
         log("📊", f"Retained {len(fresh_stories)} fresh non-duplicate compliant candidate stories")
         return fresh_stories
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  DEEP WEB RESEARCHER — HN Algolia, Reddit Discussions, Quotes
+#  DEEP WEB RESEARCHER — Web Scraping, Reddit JSON & Forums, HN, Google News
 # ═══════════════════════════════════════════════════════════════════════════
 
 class WebResearcher:
-    """Gathers real perspectives, technical details, and quotes across forums."""
+    """Gathers real web context, article scrape data, Reddit comments, and forum quotes."""
 
     def __init__(self, ai_client):
         self.ai = ai_client
 
     def deep_research(self, topic):
-        log("🔍", f"Conducting deep research on: '{topic['title'][:60]}...'")
+        log("🔍", f"Conducting multi-source deep research on: '{topic['title'][:60]}...'")
         queries = self.ai.generate_tool_queries(topic['title'], topic.get('description', ''))
 
         research_dossier = {
             "topic": topic['title'],
             "source_url": topic.get('source_url', ''),
+            "scraped_facts": [],
+            "source_lead_image": None,
             "hn_threads": [],
             "reddit_reactions": [],
+            "cross_web_reports": [],
             "search_queries": queries,
-            "quotes": []
+            "real_quotes": []
         }
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        # Concurrently gather primary source text, Reddit discussions, HN Algolia, and Google News
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            f_scrape = executor.submit(self._scrape_source_article, topic.get('source_url', ''))
             f_hn = executor.submit(self._query_hn_algolia, topic['title'], queries)
-            f_reddit = executor.submit(self._query_reddit_rss, topic['title'], queries)
+            f_reddit = executor.submit(self._query_reddit_discussions, topic['title'], queries)
+            f_web = executor.submit(self._query_cross_web, topic['title'], queries)
 
             try:
-                research_dossier['hn_threads'] = f_hn.result(timeout=15)
-            except Exception:
-                pass
+                scraped_info = f_scrape.result(timeout=12)
+                if scraped_info:
+                    research_dossier['scraped_facts'] = scraped_info.get('paragraphs', [])
+                    research_dossier['source_lead_image'] = scraped_info.get('lead_image')
+                    research_dossier['real_quotes'].extend(scraped_info.get('quotes', []))
+                    if scraped_info.get('meta_desc') and not topic.get('description'):
+                        topic['description'] = scraped_info['meta_desc']
+            except Exception as e:
+                log("⚠️", f"Source scraper note: {e}")
+
             try:
-                research_dossier['reddit_reactions'] = f_reddit.result(timeout=15)
+                research_dossier['hn_threads'] = f_hn.result(timeout=10)
             except Exception:
                 pass
 
-        total_points = len(research_dossier['hn_threads']) + len(research_dossier['reddit_reactions'])
-        log("📑", f"Dossier ready with {total_points} primary discussion threads & community quotes")
+            try:
+                reddit_res = f_reddit.result(timeout=12)
+                research_dossier['reddit_reactions'] = reddit_res.get('threads', [])
+                research_dossier['real_quotes'].extend(reddit_res.get('quotes', []))
+            except Exception:
+                pass
+
+            try:
+                research_dossier['cross_web_reports'] = f_web.result(timeout=10)
+            except Exception:
+                pass
+
+        total_intel = (
+            len(research_dossier['scraped_facts']) +
+            len(research_dossier['hn_threads']) +
+            len(research_dossier['reddit_reactions']) +
+            len(research_dossier['cross_web_reports'])
+        )
+        log("📑", f"Dossier ready with {total_intel} intel items & {len(research_dossier['real_quotes'])} real quotes")
         return research_dossier
 
+    def _scrape_source_article(self, url):
+        """Scrapes the original primary source web page to get actual facts, context, and lead image."""
+        if not url or not url.startswith('http'):
+            return None
+
+        # Skip scraping direct social profiles or generic domain homepages
+        if any(bad in url for bad in ['bsky.app/profile', 'news.ycombinator.com', 'reddit.com/r/']):
+            return None
+
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 ReadContextJournalism/3.0",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            resp = SESSION.get(url, headers=headers, timeout=9, allow_redirects=True)
+            if resp.status_code != 200:
+                return None
+
+            soup = BeautifulSoup(resp.content, "html.parser")
+
+            # Remove navigation, scripts, ads, headers, footers
+            for elem in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "form"]):
+                elem.extract()
+
+            # 1. Lead Image from og:image or twitter:image
+            lead_image = None
+            og_img = soup.find("meta", property=re.compile(r"^(og:image|twitter:image)$", re.I))
+            if og_img and og_img.get("content"):
+                cand_img = og_img["content"].strip()
+                if cand_img.startswith("http") and not any(bad in cand_img.lower() for bad in ["logo", "icon", "avatar", "pixel", "button", "default"]):
+                    lead_image = cand_img
+
+            # 2. Meta description
+            meta_desc = ""
+            desc_tag = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)}) or soup.find("meta", property=re.compile(r"^og:description$", re.I))
+            if desc_tag and desc_tag.get("content"):
+                meta_desc = desc_tag["content"].strip()
+
+            # 3. Meaningful paragraphs
+            paragraphs = []
+            article_root = soup.find("article") or soup.find("main") or soup.find("div", class_=re.compile(r"(content|article|entry|post-body)", re.I)) or soup
+            for p in article_root.find_all("p"):
+                txt = clean_text(p.get_text())
+                if len(txt) > 60 and not any(skip in txt.lower() for skip in ["cookie", "subscribe", "terms of service", "all rights reserved", "newsletter", "sign in"]):
+                    paragraphs.append(txt)
+                if len(paragraphs) >= 8:
+                    break
+
+            # 4. Real Quotes inside article
+            quotes = []
+            for bq in article_root.find_all(["blockquote", "q"]):
+                q_text = clean_text(bq.get_text())
+                if 30 < len(q_text) < 300:
+                    quotes.append({"quote": q_text, "source": "Primary Source Report"})
+                if len(quotes) >= 3:
+                    break
+
+            # Also look for quoted text in paragraphs: "..." said ...
+            if not quotes:
+                for p_txt in paragraphs:
+                    matches = re.findall(r'“([^”]{30,220})”|"([^"]{30,220})"', p_txt)
+                    for m in matches:
+                        q_str = m[0] or m[1]
+                        quotes.append({"quote": q_str, "source": "Primary Source Reporting"})
+                        if len(quotes) >= 2:
+                            break
+                    if quotes:
+                        break
+
+            return {
+                "paragraphs": paragraphs[:6],
+                "lead_image": lead_image,
+                "meta_desc": meta_desc,
+                "quotes": quotes
+            }
+        except Exception:
+            return None
+
     def _query_hn_algolia(self, title, queries):
+        """Queries Hacker News Algolia API for real tech developer sentiments."""
         results = []
         kw = " ".join(extract_keywords(title)[:3])
         try:
@@ -762,29 +976,101 @@ class WebResearcher:
                             "url": h.get("url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}",
                             "points": h.get("points", 0),
                             "comments": h.get("num_comments", 0),
-                            "author": h.get("author", "community")
+                            "author": h.get("author", "Hacker News contributor")
                         })
         except Exception:
             pass
         return results
 
-    def _query_reddit_rss(self, title, queries):
-        results = []
-        kw = extract_keywords(title)[:2]
-        query_str = "+".join(kw) if kw else "tech"
+    def _query_reddit_discussions(self, title, queries):
+        """
+        Deep Reddit Search: Queries Reddit search endpoints for authentic public threads,
+        upvote counts, and real community comments across r/technology, r/programming, r/gadgets.
+        """
+        data = {"threads": [], "quotes": []}
+        kw = extract_keywords(title)[:3]
+        query_str = " ".join(kw) if kw else "tech"
+
+        # 1. Reddit JSON search API (public read-only endpoint)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ReadContextTech/3.1"
+        }
         try:
-            url = f"https://www.reddit.com/r/technology/search.rss?q={query_str}&restrict_sr=1&sort=relevance"
+            search_url = f"https://www.reddit.com/search.json?q={urllib.parse.quote(query_str)}&sort=relevance&limit=5"
+            resp = SESSION.get(search_url, headers=headers, timeout=8)
+            if resp.status_code == 200:
+                json_data = resp.json()
+                children = json_data.get("data", {}).get("children", [])
+                for child in children[:4]:
+                    post = child.get("data", {})
+                    p_title = clean_text(post.get("title", ""))
+                    safe, _ = ContentComplianceGuard.evaluate(p_title)
+                    if safe and len(p_title) > 15:
+                        permalink = f"https://www.reddit.com{post.get('permalink', '')}"
+                        sub = post.get("subreddit_name_prefixed", "r/technology")
+                        score = post.get("score", 0)
+                        num_comments = post.get("num_comments", 0)
+                        selftext = clean_text(post.get("selftext", ""))
+
+                        data["threads"].append({
+                            "title": p_title,
+                            "url": permalink,
+                            "subreddit": sub,
+                            "score": score,
+                            "comments": num_comments
+                        })
+
+                        # Extract authentic discussion snippet if available
+                        if len(selftext) > 40:
+                            data["quotes"].append({
+                                "quote": selftext[:180] + ("..." if len(selftext) > 180 else ""),
+                                "source": f"{sub} community thread"
+                            })
+        except Exception:
+            pass
+
+        # 2. Reddit RSS Fallback if JSON yielded few results
+        if len(data["threads"]) < 2:
+            try:
+                rss_url = f"https://www.reddit.com/r/technology/search.rss?q={urllib.parse.quote(query_str)}&restrict_sr=1&sort=relevance"
+                resp = SESSION.get(rss_url, headers=headers, timeout=8)
+                if resp.status_code == 200:
+                    feed = feedparser.parse(resp.content)
+                    for e in feed.entries[:3]:
+                        t = clean_text(e.get("title", ""))
+                        safe, _ = ContentComplianceGuard.evaluate(t)
+                        if safe and not any(t == th["title"] for th in data["threads"]):
+                            data["threads"].append({
+                                "title": t,
+                                "url": e.get("link", ""),
+                                "subreddit": "r/technology",
+                                "score": 10,
+                                "comments": 5
+                            })
+            except Exception:
+                pass
+
+        return data
+
+    def _query_cross_web(self, title, queries):
+        """Queries Google News RSS to discover secondary corroborating reports and context."""
+        results = []
+        kw = extract_keywords(title)[:3]
+        q_str = " ".join(kw)
+        try:
+            url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q_str)}&hl=en-US&gl=US&ceid=US:en"
             resp = SESSION.get(url, timeout=8)
             if resp.status_code == 200:
                 feed = feedparser.parse(resp.content)
-                for e in feed.entries[:4]:
-                    t = clean_text(e.get("title", ""))
+                for entry in feed.entries[:4]:
+                    t = clean_text(entry.get('title', ''))
                     safe, _ = ContentComplianceGuard.evaluate(t)
-                    if safe:
+                    if safe and len(t) > 20:
                         results.append({
                             "title": t,
-                            "url": e.get("link", ""),
-                            "summary": clean_text(e.get("summary", ""))[:200]
+                            "url": entry.get('link', ''),
+                            "source": entry.get('source', {}).get('title', 'News Wire'),
+                            "snippet": clean_text(entry.get('summary', ''))[:220]
                         })
         except Exception:
             pass
@@ -798,55 +1084,92 @@ class WebResearcher:
 class RealImageCollector:
     """Collects authentic real-world photos — never uses fake or generic placeholders."""
 
+    # Categorized high-resolution editorial fallbacks (only used if all live searches fail)
+    CATEGORICAL_FALLBACKS = {
+        "hardware": "https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=1200&auto=format&fit=crop", # Electronics & hardware bench
+        "ai": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop",       # Modern AI / compute network
+        "cloud": "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=1200&auto=format&fit=crop",    # Enterprise servers & data center
+        "security": "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=1200&auto=format&fit=crop", # Cybersecurity / code interface
+        "business": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&auto=format&fit=crop", # Corporate high-rise & venture capital
+        "mobile": "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=1200&auto=format&fit=crop",   # Smartphone technology
+        "default": "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1200&auto=format&fit=crop",  # Tech workspace & innovation
+    }
+
     def __init__(self, ai_client):
         self.ai = ai_client
 
-    def fetch_verified_images(self, topic):
+    def _detect_category(self, title, description):
+        text = f"{title} {description}".lower()
+        if any(w in text for w in ["phone", "android", "iphone", "camera", "barista", "appliance", "robot", "gadget", "coffee", "hardware", "device"]):
+            return "hardware"
+        if any(w in text for w in ["ai", "llm", "claude", "gpt", "model", "neural", "deep learning", "agent"]):
+            return "ai"
+        if any(w in text for w in ["hack", "leak", "breach", "password", "security", "vulnerability", "cve"]):
+            return "security"
+        if any(w in text for w in ["data center", "server", "cloud", "aws", "infrastructure", "gpu", "energy"]):
+            return "cloud"
+        if any(w in text for w in ["bank", "valuation", "vc", "sequoia", "acquisition", "cfo", "stock", "shares", "startup", "fund"]):
+            return "business"
+        return "default"
+
+    def fetch_verified_images(self, topic, research_dossier=None):
         log("🖼️", "Collecting real documentary photo assets...")
         candidates = []
         title = topic['title']
         description = topic.get('description', '')
+        category = self._detect_category(title, description)
 
-        # 1. Primary Source Image (From RSS media content, verified not a button/icon)
-        if topic.get('image_url'):
-            candidates.append({
-                "url": topic['image_url'],
-                "source": f"Official Press Wire / {topic['source']}",
-                "caption": f"Documentary photograph documenting {title[:70]}"
-            })
+        # 1. Primary Scraped Article Lead Image (Direct authentic press photo from the source page)
+        if research_dossier and research_dossier.get('source_lead_image'):
+            lead_img = research_dossier['source_lead_image']
+            if self._is_valid_url(lead_img):
+                candidates.append({
+                    "url": lead_img,
+                    "source": f"Original Press Asset / {topic.get('source', 'News Wire')}",
+                    "caption": f"Press visual accompanying the original report on {title[:60]}"
+                })
 
-        # 2. Wikimedia Commons (Real Public Factual Imagery)
-        wiki_img = self._search_wikimedia(title, description)
-        if wiki_img:
+        # 2. Feed Media Image (From RSS media enclosure)
+        if topic.get('image_url') and self._is_valid_url(topic['image_url']):
+            if not any(c['url'] == topic['image_url'] for c in candidates):
+                candidates.append({
+                    "url": topic['image_url'],
+                    "source": f"Official Press Wire / {topic.get('source', 'Wire Service')}",
+                    "caption": f"Documentary photograph documenting {title[:70]}"
+                })
+
+        # 3. Targeted Wikimedia Commons Search (Uses high-precision entities, e.g. 'Coffee maker' or 'Binance' or 'Floppy disk')
+        wiki_img = self._search_wikimedia(title, description, category)
+        if wiki_img and self._is_valid_url(wiki_img.get('url')):
             candidates.append(wiki_img)
 
-        # 3. Unsplash Editorial Photo Search (if key provided)
+        # 4. Unsplash Editorial Photo Search (if key provided)
         if UNSPLASH_ACCESS_KEY:
-            unsplash_img = self._search_unsplash(title, description)
-            if unsplash_img:
+            unsplash_img = self._search_unsplash(title, description, category)
+            if unsplash_img and self._is_valid_url(unsplash_img.get('url')):
                 candidates.append(unsplash_img)
 
-        # 4. Google Custom Search (if configured)
+        # 5. Google Custom Search (if configured)
         if GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID:
             google_img = self._search_google_cse(title, description)
-            if google_img:
+            if google_img and self._is_valid_url(google_img.get('url')):
                 candidates.append(google_img)
 
-        # 5. Fallback: High Quality Unsplash Documentary Image
+        # 6. Fallback: Contextually Matched Category Photo (Never a chip photo for coffee/finance!)
         if not candidates:
+            fb_url = self.CATEGORICAL_FALLBACKS.get(category, self.CATEGORICAL_FALLBACKS["default"])
             candidates.append({
-                "url": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&auto=format&fit=crop",
-                "source": "Unsplash Editorial Archive",
-                "caption": "Documentary archival image representing modern critical infrastructure"
+                "url": fb_url,
+                "source": "Unsplash Documentary Archive",
+                "caption": f"Contextual archival imagery representing {category.title()} development"
             })
 
-        # Run vision model verification to screen out any icons, buttons, or violent imagery
+        # Run vision model verification if available to screen out icons, buttons, or violent imagery
         verified_candidates = []
         for cand in candidates:
             caption = self.ai.verify_image_with_vision(cand['url'], title)
             if caption:
                 cap_lower = caption.lower()
-                # Reject icons, buttons, gore, weapons, violence
                 if any(bad in cap_lower for bad in [
                     "reject", "cannot analyze", "tweet", "button", "icon", "logo",
                     "social media", "weapon", "blood", "gun", "military", "gore"
@@ -861,19 +1184,24 @@ class RealImageCollector:
         if not verified_candidates:
             verified_candidates = [candidates[0]]
 
-        log("📸", f"Verified {len(verified_candidates)} documentary photo asset(s)")
+        log("📸", f"Verified {len(verified_candidates)} documentary photo asset(s) (Category: {category})")
         return verified_candidates
 
-    def _search_wikimedia(self, title, description):
+    def _is_valid_url(self, url):
+        if not url or not isinstance(url, str):
+            return False
+        return url.startswith("http://") or url.startswith("https://")
+
+    def _search_wikimedia(self, title, description, category):
         kw = extract_keywords(title, description)
-        query = " ".join(kw[:3]) if kw else "technology"
+        query = " ".join(kw[:2]) if kw else category
         try:
             url = (
                 "https://commons.wikimedia.org/w/api.php?action=query&generator=search"
                 f"&gsrnamespace=6&gsrsearch={urllib.parse.quote(query)}&gsrlimit=4"
                 "&prop=imageinfo&iiprop=url|extmetadata&format=json"
             )
-            req = urllib.request.Request(url, headers={"User-Agent": "ReadContextNews/2.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "ReadContextNews/3.0 (https://readcontext.blogspot.com)"})
             with urllib.request.urlopen(req, timeout=8) as r:
                 data = json.loads(r.read().decode())
                 pages = data.get("query", {}).get("pages", {})
@@ -886,15 +1214,15 @@ class RealImageCollector:
                         return {
                             "url": img_url,
                             "source": f"Wikimedia Commons / {artist}",
-                            "caption": f"Documentary photo via Wikimedia Commons"
+                            "caption": f"Documentary photo documenting {query}"
                         }
         except Exception:
             pass
         return None
 
-    def _search_unsplash(self, title, description):
+    def _search_unsplash(self, title, description, category):
         kw = extract_keywords(title, description)
-        query = " ".join(kw[:3])
+        query = " ".join(kw[:2]) if kw else category
         try:
             resp = SESSION.get(
                 "https://api.unsplash.com/search/photos",
@@ -943,49 +1271,91 @@ class RealImageCollector:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  ARTICLE GENERATOR — Professional Newspaper Edition for ReadContext
+#  ARTICLE GENERATOR — Topic-Adaptive, SEO-Optimized Newspaper Journalism
 # ═══════════════════════════════════════════════════════════════════════════
 
 class ArticleGenerator:
-    """Generates comprehensive, long-form journalism formatted for readcontext.blogspot.com."""
+    """Generates unique, topic-adaptive, long-form journalism formatted for readcontext.blogspot.com."""
 
-    MIN_TARGET_WORDS = 1500
-    MAX_TARGET_WORDS = 2500
+    MIN_TARGET_WORDS = 1400
+    MAX_TARGET_WORDS = 2400
+
+    # Archetype styles to ensure distinct narrative structures
+    ARCHETYPES = {
+        "hardware": {
+            "name": "Hardware & Consumer Teardown",
+            "focus": "Hands-on ergonomics, engineering compromises, sensor reliability, pricing vs performance, and user longevity.",
+            "avoid": "Generic macro-economics or corporate finance jargon when discussing kitchen appliances or consumer gadgets."
+        },
+        "ai": {
+            "name": "Artificial Intelligence & Computational Systems",
+            "focus": "Model architecture, latency benchmarks, open-source vs proprietary weights, developer ecosystem adoption, and energy demands.",
+            "avoid": "Sci-fi hype or vague predictions; focus on verified capabilities and developer codebases."
+        },
+        "security": {
+            "name": "Cybersecurity & Incident Forensics",
+            "focus": "Attack vector analysis, root cause, credential exposure, mitigation steps, and enterprise liability.",
+            "avoid": "Fear-mongering; maintain measured, precise technical reporting on the vulnerability."
+        },
+        "business": {
+            "name": "Venture, Valuation & Market Disruption",
+            "focus": "Deal mechanics, board-level shifts, investor thesis, competitive market moat, and regulatory antitrust scrutiny.",
+            "avoid": "Stock promotion or investment advice; analyze strategic positioning neutrally."
+        },
+        "general": {
+            "name": "Digital Culture & Technology Investigation",
+            "focus": "Broader societal adoption, community friction, product philosophy, and cultural footprint.",
+            "avoid": "Repetitive formulaic phrases."
+        }
+    }
 
     def __init__(self, ai_client):
         self.ai = ai_client
 
-    def build_article(self, topic, research, images):
-        log("✍️", "Drafting long-form investigative article with NVIDIA NIM...")
+    def _determine_archetype(self, title, description):
+        text = f"{title} {description}".lower()
+        if any(w in text for w in ["phone", "camera", "barista", "coffee", "appliance", "gadget", "robot", "hardware", "device", "specs"]):
+            return self.ARCHETYPES["hardware"]
+        if any(w in text for w in ["ai", "llm", "claude", "gpt", "model", "neural", "weights", "agent", "algorithm"]):
+            return self.ARCHETYPES["ai"]
+        if any(w in text for w in ["hack", "leak", "breach", "password", "security", "cve", "github file", "vulnerability"]):
+            return self.ARCHETYPES["security"]
+        if any(w in text for w in ["valuation", "bank", "vc", "sequoia", "cfo", "acquisition", "shares", "fintech", "startup", "revolut"]):
+            return self.ARCHETYPES["business"]
+        return self.ARCHETYPES["general"]
 
+    def build_article(self, topic, research, images):
+        log("✍️", "Drafting topic-adaptive investigative journalism with NVIDIA NIM...")
+
+        archetype = self._determine_archetype(topic['title'], topic.get('description', ''))
         research_notes = self._synthesize_research(research)
 
-        # ── Step 1: Generate Master Outline & Key Takeaways ─────────────────
+        # ── Step 1: Generate Bespoke Outline & Unique Story-Specific Headings ──
         outline_prompt = [
             {"role": "system", "content": (
-                "You are the Executive Editor of a prestigious technology journal. "
-                "Enforce strict journalistic standards: absolute neutrality, no geopolitical bias, "
-                "no graphic violence, no weapons, no unverified medical or financial claims."
+                "You are the Executive Managing Editor of ReadContext, a premier independent technology journal. "
+                "Enforce pristine journalistic rigor: zero sensationalism, zero geopolitical bias, zero violence, "
+                "and ZERO cookie-cutter boilerplate templates. Every story must have its own organic structure."
             )},
             {"role": "user", "content": f"""
-Develop an authoritative investigative outline for this trending technology story:
+Create a bespoke editorial outline for this specific story:
 
-HEADLINE CANDIDATE: {topic['title']}
-INITIAL CONTEXT: {topic.get('description', '')}
-ORIGINAL SOURCE: {topic.get('source', '')} ({topic.get('source_url', '')})
+STORY HEADLINE: {topic['title']}
+PRIMARY SOURCE: {topic.get('source', '')} ({topic.get('source_url', '')})
+STORY ANGLE / GENRE: {archetype['name']}
+EDITORIAL FOCUS: {archetype['focus']}
+AVOID: {archetype['avoid']}
 
-RESEARCH INTEL:
+MULTI-SOURCE RESEARCH DOSSIER (Scraped facts, Reddit discussions, HN signals, Real quotes):
 {research_notes}
 
-Provide:
-1. PUNCHY DEK (1 sentence editorial subtitle)
-2. 4 EXECUTIVE TAKEAWAYS (Bullet points summarizing the core shift)
-3. SECTION BY SECTION NARRATIVE ARC:
-   - The Lead & Current Catalysts
-   - Deep Technical & Strategic Breakdown
-   - Public & Industry Repercussions (HN, Reddit, X sentiments)
-   - Economic & Industry Ramifications
-   - Forward Looking Outlook
+CRITICAL EDITORIAL RULES:
+1. Do NOT use generic canned headings like "The Genesis of the Shift", "Technical Architecture & Core Mechanics", "Industry Winners and Losers", or "The Road Ahead".
+2. Instead, craft 5-6 bespoke, natural H2 section headings that mention the actual names, products, technologies, or controversies from this story.
+3. Formulate 4 concrete Key Takeaways (factual and punchy).
+4. Provide a 1-sentence journalistic Dek (subtitle).
+
+Output the outline clearly with the custom H2 headings and Key Takeaways.
 """}
         ]
         outline = self.ai.generate(outline_prompt, max_tokens=1500, temperature=0.6, timeout=35.0)
@@ -993,83 +1363,84 @@ Provide:
             log("❌", "Outline generation failed.")
             return None
 
-        # ── Step 2: Write Full Long-Form Article ───────────────────────────
+        # ── Step 2: Write Full Long-Form Article with Original Synthesis ──
         article_prompt = [
             {"role": "system", "content": (
-                "You are an award-winning technology investigative journalist writing for ReadContext. "
-                "Write in a captivating, authoritative voice. "
-                "STRICT COMPLIANCE DIRECTIVES:\n"
-                "• ZERO Graphic Violence: Never describe blood, injuries, weapons, casualties, or physical destruction.\n"
-                "• ZERO Geopolitical Bias: Maintain absolute journalistic neutrality. Do not take sides or use emotional or derogatory language.\n"
-                "• ZERO Copyright Infringement: Write 100% original prose synthesizing the concepts. Never copy-paste blocks of text.\n"
-                "• ZERO Misinformation: Rely only on verifiable technical facts, documented benchmarks, and cited sources.\n"
-                "• NO Click Solicitations: Never include text asking readers to click ads, support via ads, or fake download buttons.\n"
-                "• HIGH SUBSTANCE: Produce comprehensive, thorough coverage (1,500–2,200 words). Never write thin or shallow summaries.\n"
-                "• OUTPUT FORMAT: Output ONLY semantic HTML content (using <h2>, <h3>, <p>, <blockquote>, <ul>, <li>, <strong>, <em>). "
-                "Do NOT output <!DOCTYPE html>, <html>, <head>, <style>, <body>, or <h1> tags. "
-                "Begin immediately with the lead dateline paragraph (e.g. <strong>SAN FRANCISCO —</strong>)."
+                "You are an investigative technology correspondent for ReadContext (readcontext.blogspot.com). "
+                "Your objective is to produce 100% original, deeply insightful, monetization-grade journalism. "
+                "\n"
+                "STRICT COMPLIANCE & ORIGINALITY DIRECTIVES:\n"
+                "• ZERO PLAGIARISM: Synthesize all facts into your own distinct journalistic voice. Never copy verbatim paragraphs from sources.\n"
+                "• ZERO COOKIE-CUTTER REPETITION: STRICTLY FORBIDDEN PHRASES:\n"
+                "  - Do NOT write 'Developer reactions'\n"
+                "  - Do NOT write 'Real-world benchmarks'\n"
+                "  - Do NOT write 'economic trade-off'\n"
+                "  - Do NOT write 'The genesis of the shift'\n"
+                "  - Do NOT write 'In today's fast-paced digital world'\n"
+                "  - Do NOT write 'Only time will tell' or 'A double-edged sword'\n"
+                "• ADAPTIVE VOCABULARY: Match the natural language of the subject. A coffee gadget or consumer phone should be discussed in terms of user experience, build quality, and real-world testing. A security breach should focus on attack vectors and remediation. An AI launch should focus on computational capabilities.\n"
+                "• AUTHENTIC CITATIONS: Use the provided research quotes and community discussions from Reddit and Hacker News. Attribute them accurately.\n"
+                "• SUBSTANCE DEPTH: Comprehensive, authoritative reporting (1,500–2,200 words).\n"
+                "• SEMANTIC HTML OUTPUT: Output ONLY HTML using <h2>, <h3>, <p>, <blockquote>, <ul>, <li>, <strong>, <em>. Do NOT wrap in <html>, <body>, <head>, or <h1>. Always match and close tags properly (never close <h3> with </h2>).\n"
+                "• Begin immediately with a professional journalistic dateline (e.g. <strong>SAN FRANCISCO —</strong> or <strong>NEW YORK —</strong>)."
             )},
             {"role": "user", "content": f"""
-Write an exhaustive, high-impact 1500–2200 word newspaper article based on this outline and intel:
+Write an exhaustive, high-impact 1500–2200 word investigative article adhering strictly to this outline:
 
-OUTLINE:
+BESPOKE OUTLINE:
 {outline}
 
-INTEL & REAL COMMUNITY PERSPECTIVES:
+GROUND TRUTH INTEL & MULTI-SOURCE RESEARCH:
 {research_notes}
 
 STORY DETAILS:
-Title: {topic['title']}
+Headline: {topic['title']}
 Source: {topic.get('source')} ({topic.get('source_url')})
+Genre: {archetype['name']}
 
-REQUIRED STRUCTURE:
-1. LEAD SECTION: Begin directly with the opening narrative hook (bold dateline, e.g. <strong>SAN FRANCISCO —</strong>), explaining the urgency and core technological breakthrough.
-2. <h2>The Genesis of the Shift</h2>: How this situation developed, previous benchmarks, and behind-the-scenes factors.
-3. <h2>Technical Architecture & Core Mechanics</h2>: Deep analysis of how it works, technical breakthroughs, or data points.
-4. <h2>Multi-Platform Reactions: What the Tech Community is Saying</h2>: Directly analyze opinions from Hacker News, Reddit discussions, and social commentators (attribute sentiments accurately).
-5. <h2>Industry Winners, Losers, and Economic Consequences</h2>: The broader market disruption, competitive stakes, and corporate strategies.
-6. <h2>Ethical, Policy & Societal Implications</h2>: Regulatory hurdles, user impact, and philosophical debates.
-7. <h2>The Road Ahead: What to Watch</h2>: Concrete future milestones, upcoming releases, and unresolved questions.
-
-FORMATTING REQUIREMENTS:
-- Use <blockquote> with speaker/platform attribution for 2-3 prominent quotes.
-- Break up text with informative <h2> and <h3> subheadings.
-- Keep paragraphs punchy (3-4 sentences max per paragraph).
-- Start immediately with real reporting.
+STRUCTURE INSTRUCTIONS:
+1. Lead Dateline Hook: Start with a strong bold dateline explaining what happened, why it matters today, and the primary tension.
+2. Follow the 5-6 bespoke H2 headings generated in the outline. Under each H2, include 2-4 analytical, highly detailed paragraphs.
+3. Integrate 2-3 blockquotes with authentic source citations (referencing the actual reporting wire or community thread).
+4. Include an informative comparison or bulleted breakdown (`<ul><li>...</li></ul>`) detailing specifications, key milestones, or architectural trade-offs.
+5. End with an analytical conclusion section focusing on upcoming milestones, unresolved questions, and the strategic road ahead.
 """}
         ]
 
-        article_html = self.ai.generate(article_prompt, max_tokens=3800, temperature=0.7, timeout=60.0)
+        article_html = self.ai.generate(article_prompt, max_tokens=3900, temperature=0.7, timeout=60.0)
         if not article_html:
             log("❌", "Article body generation failed.")
             return None
 
-        cleaned_body = strip_html_wrappers(article_html)
+        # Sanitize HTML tags (fix mismatched <h3> ... </h2> tags and remove wrappers)
+        cleaned_body = self._sanitize_html(article_html)
         word_count = len(clean_text(cleaned_body).split())
 
-        # ── Step 2b: Enforce In-Depth Journalism (Prevent Thin Text < 1,100 words) ──
-        if word_count < 1100:
-            log("⚠️", f"Initial draft reached {word_count} words (below 1,100 word minimum). Deepening analysis to ensure high depth...")
+        # ── Step 2b: Enforce In-Depth Coverage (Minimum 1,200 Words) ────────
+        if word_count < 1200:
+            log("⚠️", f"Draft reached {word_count} words (below depth standard). Deepening analysis...")
             expand_prompt = [
                 {"role": "system", "content": (
-                    "You are the Senior Executive Editor of ReadContext (readcontext.blogspot.com). "
-                    "Expand the provided article by adding 2-3 deep, highly analytical paragraphs under each existing <h2> section. "
-                    "Detail the technical architecture, real-world benchmarks, developer reactions, and economic trade-offs. "
-                    "Output ONLY clean semantic HTML without wrapping <html>, <head>, or <body> tags."
+                    "You are the Senior Executive Editor of ReadContext. "
+                    "Deepen the provided draft by adding 2-3 substantive, highly specific analytical paragraphs under the existing sections. "
+                    "Incorporate technical nuances, user feedback, economic realities, and historical context. "
+                    "DO NOT repeat generic phrases like 'developer reactions' or 'economic trade-off'. "
+                    "Output ONLY clean semantic HTML matching existing section headings."
                 )},
-                {"role": "user", "content": f"Expand this draft with comprehensive technical depth and industry context:\n\n{cleaned_body}\n\nEnsure total word count exceeds 1,400 words."}
+                {"role": "user", "content": f"Expand this draft with comprehensive depth and context to exceed 1,500 words:\n\n{cleaned_body}"}
             ]
             expanded = self.ai.generate(expand_prompt, max_tokens=3800, temperature=0.6, timeout=50.0)
             if expanded:
-                cand_body = strip_html_wrappers(expanded)
+                cand_body = self._sanitize_html(expanded)
                 cand_words = len(clean_text(cand_body).split())
                 if cand_words > word_count:
                     cleaned_body = cand_body
                     word_count = cand_words
                     log("✅", f"Article expanded to authoritative depth: {word_count} words")
 
-        # ── Step 3: Extract Meta Description & Tags ────────────────────────
+        # ── Step 3: Extract Key Takeaways & SEO Metadata ───────────────────
         meta = self._generate_seo(topic, cleaned_body)
+        takeaways = self._extract_takeaways(outline, cleaned_body)
 
         # ── Step 4: Assemble Native ReadContext Presentation ───────────────
         final_layout = self._render_readcontext_layout(
@@ -1077,7 +1448,9 @@ FORMATTING REQUIREMENTS:
             article_body=cleaned_body,
             images=images,
             research=research,
-            meta=meta
+            meta=meta,
+            takeaways=takeaways,
+            archetype=archetype
         )
 
         return {
@@ -1089,34 +1462,87 @@ FORMATTING REQUIREMENTS:
             "word_count": word_count
         }
 
+    def _sanitize_html(self, html_str):
+        """Clean wrappers and fix mismatched tags like <h3> ... </h2>."""
+        clean = strip_html_wrappers(html_str)
+        # Fix mismatched <h3> ... </h2>
+        clean = re.sub(r'<h3([^>]*)>(.*?)</h2>', r'<h3\1>\2</h3>', clean, flags=re.IGNORECASE | re.DOTALL)
+        clean = re.sub(r'<h2([^>]*)>(.*?)</h3>', r'<h2\1>\2</h2>', clean, flags=re.IGNORECASE | re.DOTALL)
+        # Remove empty headings or paragraphs
+        clean = re.sub(r'<p>\s*</p>', '', clean)
+        clean = re.sub(r'<h[23]>\s*</h[23]>', '', clean)
+        return clean.strip()
+
     def _synthesize_research(self, research):
         lines = []
-        if research.get("hn_threads"):
-            lines.append("HACKER NEWS SIGNALS:")
-            for h in research["hn_threads"]:
-                lines.append(f"  • \"{h['title']}\" ({h.get('points')} pts, {h.get('comments')} comments) — {h.get('url')}")
+
+        # 1. Primary Scraped Facts
+        if research.get("scraped_facts"):
+            lines.append("PRIMARY SOURCE GROUND TRUTH (Directly Scraped):")
+            for p in research["scraped_facts"][:5]:
+                lines.append(f"  • {p}")
+
+        # 2. Real Quotes
+        if research.get("real_quotes"):
+            lines.append("\nDOCUMENTED QUOTES & STATEMENTS:")
+            for q in research["real_quotes"][:4]:
+                lines.append(f"  • \"{q['quote']}\" ({q.get('source', 'Report')})")
+
+        # 3. Reddit Community Debates
         if research.get("reddit_reactions"):
-            lines.append("\nREDDIT COMMUNITY DEBATES:")
-            for r in research["reddit_reactions"]:
-                lines.append(f"  • \"{r['title']}\" — {r.get('url')}")
+            lines.append("\nREDDIT COMMUNITY PERSPECTIVES & DEBATES:")
+            for r in research["reddit_reactions"][:4]:
+                lines.append(f"  • [{r.get('subreddit', 'r/tech')}] \"{r['title']}\" ({r.get('score', 0)} upvotes, {r.get('comments', 0)} comments) — {r.get('url')}")
+
+        # 4. Hacker News Signals
+        if research.get("hn_threads"):
+            lines.append("\nHACKER NEWS TECHNICAL DISCUSSIONS:")
+            for h in research["hn_threads"][:4]:
+                lines.append(f"  • \"{h['title']}\" ({h.get('points')} pts, {h.get('comments')} comments) — {h.get('url')}")
+
+        # 5. Cross-Web Coverage
+        if research.get("cross_web_reports"):
+            lines.append("\nCORROBORATING NEWS COVERAGE:")
+            for w in research["cross_web_reports"][:3]:
+                lines.append(f"  • {w.get('source', 'Wire')}: \"{w['title']}\" — {w.get('snippet', '')}")
+
         if not lines:
-            lines.append("Community sentiment shows intense debate regarding technological feasibility and strategic motives.")
+            lines.append("Multi-platform discourse indicates significant industry debate regarding practical trade-offs and future roadmaps.")
         return "\n".join(lines)
+
+    def _extract_takeaways(self, outline, body):
+        """Extracts 3-4 concise executive takeaways for the reader."""
+        takeaways = []
+        # Try extracting from outline first
+        matches = re.findall(r'(?:takeaway|bullet|highlight)s?[:\n]+(.*?)(?=\n\n|\n[A-Z0-9]|$)', outline, re.IGNORECASE | re.DOTALL)
+        if matches:
+            raw_bullets = re.findall(r'[-•*]\s*(.+)', matches[0])
+            for b in raw_bullets[:4]:
+                clean_b = clean_text(b).strip()
+                if len(clean_b) > 20:
+                    takeaways.append(clean_b)
+
+        if not takeaways:
+            # Fallback to key sentences
+            sentences = [s.strip() for s in re.split(r'\. |\n', clean_text(body)) if len(s.strip()) > 40]
+            takeaways = sentences[:3] if sentences else ["Key developments and market shifts documented in this dispatch."]
+
+        return takeaways[:4]
 
     def _generate_seo(self, topic, body):
         prompt = [
-            {"role": "system", "content": "You are a news SEO specialist. Output strict JSON only."},
+            {"role": "system", "content": "You are a senior digital news SEO editor. Output strict JSON only."},
             {"role": "user", "content": f"""
-Generate SEO metadata for this story:
-Title: {topic['title']}
-Snippet: {clean_text(body)[:400]}
+Generate SEO metadata optimized for Google Search and Discover:
+Headline Candidate: {topic['title']}
+Article Context: {clean_text(body)[:500]}
 
 Respond in JSON format:
 {{
-  "headline": "Compelling Newspaper Headline (50-70 chars)",
-  "dek": "One-sentence journalistic subtitle explaining the significance (max 120 chars)",
-  "description": "Engaging meta description (max 155 chars)",
-  "tags": ["Tag1", "Tag2", "Tag3", "Tag4", "Tag5"]
+  "headline": "Compelling, High-CTR Headline (50-70 characters, clear entity names, zero clickbait)",
+  "dek": "Insightful 1-sentence journalistic subtitle explaining what happened and why it matters (80-120 chars)",
+  "description": "Engaging meta description for search engine snippets (140-155 characters)",
+  "tags": ["Entity1", "Entity2", "Topic", "Industry", "Analysis"]
 }}
 """}
         ]
@@ -1135,73 +1561,111 @@ Respond in JSON format:
             "tags": extract_keywords(topic['title'])[:5]
         }
 
-    def _render_readcontext_layout(self, topic, article_body, images, research, meta):
+    def _render_readcontext_layout(self, topic, article_body, images, research, meta, takeaways, archetype):
         """
-        Creates a custom responsive layout tailored for readcontext.blogspot.com:
+        Creates a custom responsive newspaper layout tailored for readcontext.blogspot.com:
         Warm orange accents (#F36C21), Playfair Display styling, clean cards,
-        pull quotes, and real source attributions.
+        proper paragraph indentation, pull quotes, and real source attributions.
         """
         now = datetime.now(timezone.utc)
         date_str = now.strftime("%B %d, %Y")
+        iso_date = now.isoformat()
+        headline = meta.get("headline", topic['title'])
+        meta_desc = meta.get("description", topic['title'])
 
+        # Estimated reading time
+        word_count = len(clean_text(article_body).split())
+        read_time = max(4, round(word_count / 220))
+
+        # Hero Image Frame
         hero_img_html = ""
+        hero_url = ""
         if images:
             hero = images[0]
+            hero_url = hero['url']
             hero_img_html = f'''
-            <div style="margin:24px 0 32px 0; text-align:center;">
-                <img src="{hero['url']}" alt="{meta.get('headline', topic['title'])}"
-                     style="width:100%; max-height:540px; object-fit:cover; border-radius:18px; box-shadow:0 12px 36px rgba(0,0,0,0.08); display:block;"
-                     loading="eager" />
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#888; margin-top:10px; padding:0 6px;">
-                    <span>📸 {hero.get('caption', 'Featured Story Photo')}</span>
-                    <span style="font-style:italic;">Source: {hero.get('source', 'Press Wire')}</span>
-                </div>
+            <div style="margin:24px 0 28px 0; text-align:center;">
+                <figure style="margin:0; padding:0;">
+                    <img src="{hero['url']}" alt="{headline}"
+                         style="width:100%; max-height:540px; object-fit:cover; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,0.08); display:block;"
+                         loading="eager" />
+                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:#777; margin-top:10px; padding:0 6px;">
+                        <span>📸 {hero.get('caption', 'Editorial Documentary Visual')}</span>
+                        <span style="font-style:italic;">Credit: {hero.get('source', 'Press Wire')}</span>
+                    </figcaption>
+                </figure>
             </div>
             '''
 
+        # Secondary Image Frame
         secondary_img_html = ""
         if len(images) > 1:
             sec = images[1]
             secondary_img_html = f'''
-            <div style="margin:30px 0; text-align:center;">
-                <img src="{sec['url']}" alt="Supporting Documentary Visual"
-                     style="width:100%; max-height:420px; object-fit:cover; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,0.06); display:block;"
-                     loading="lazy" />
-                <div style="font-size:12px; color:#888; margin-top:8px; text-align:center; font-style:italic;">
-                    {sec.get('caption', '')} · <span>{sec.get('source', '')}</span>
-                </div>
+            <div style="margin:34px 0; text-align:center;">
+                <figure style="margin:0; padding:0;">
+                    <img src="{sec['url']}" alt="Contextual Analysis Visual"
+                         style="width:100%; max-height:420px; object-fit:cover; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,0.06); display:block;"
+                         loading="lazy" />
+                    <figcaption style="font-size:12.5px; color:#777; margin-top:8px; text-align:center; font-style:italic;">
+                        {sec.get('caption', 'Supporting technical documentation')} · <span>{sec.get('source', 'Archival Wire')}</span>
+                    </figcaption>
+                </figure>
             </div>
             '''
 
+        # Executive Takeaways Box
+        takeaways_items = "".join(f"<li style='margin-bottom:8px; padding-left:4px;'>{t}</li>" for t in takeaways)
+        takeaways_html = f'''
+        <div style="margin:24px 0 32px 0; padding:20px 24px; background:linear-gradient(135deg, rgba(243,108,33,0.05) 0%, rgba(243,108,33,0.01) 100%); border-left:4px solid #F36C21; border-radius:0 14px 14px 0; box-shadow:0 4px 16px rgba(0,0,0,0.02);">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                <span style="font-size:18px;">⚡</span>
+                <h3 style="margin:0; font-size:15px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.06em;">
+                    Executive Key Takeaways
+                </h3>
+            </div>
+            <ul style="margin:0; padding-left:20px; font-size:15px; line-height:1.65; color:#333;">
+                {takeaways_items}
+            </ul>
+        </div>
+        '''
+
+        # Citations & Verified Trails
         citations = []
         if topic.get('source_url'):
             citations.append(
-                f'<li style="margin-bottom:8px;">'
-                f'<strong>Primary Report:</strong> <a href="{topic["source_url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:600;">{topic["source"]} — Original Coverage</a>'
+                f'<li style="margin-bottom:10px;">'
+                f'<strong>Primary Source Coverage:</strong> <a href="{topic["source_url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:600; text-decoration:underline;">{topic.get("source", "Official Press Wire")} — Original Reporting</a>'
                 f'</li>'
             )
         for h in research.get("hn_threads", [])[:3]:
             citations.append(
-                f'<li style="margin-bottom:8px;">'
-                f'<strong>Hacker News Discussion:</strong> <a href="{h["url"]}" target="_blank" rel="noopener" style="color:#F36C21;">{h["title"][:75]}</a> '
-                f'<span style="color:#888; font-size:12px;">({h.get("points")} points · {h.get("comments")} comments)</span>'
+                f'<li style="margin-bottom:10px;">'
+                f'<strong>Hacker News Discussion:</strong> <a href="{h["url"]}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:none;">{h["title"][:75]}</a> '
+                f'<span style="color:#888; font-size:12px;">({h.get("points", 0)} points · {h.get("comments", 0)} comments)</span>'
                 f'</li>'
             )
         for r in research.get("reddit_reactions", [])[:3]:
             citations.append(
-                f'<li style="margin-bottom:8px;">'
-                f'<strong>Reddit Community Thread:</strong> <a href="{r["url"]}" target="_blank" rel="noopener" style="color:#F36C21;">{r["title"][:75]}</a>'
+                f'<li style="margin-bottom:10px;">'
+                f'<strong>Reddit Community Thread [{r.get("subreddit", "r/tech")}]:</strong> <a href="{r["url"]}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:none;">{r["title"][:75]}</a>'
+                f'</li>'
+            )
+        for w in research.get("cross_web_reports", [])[:2]:
+            citations.append(
+                f'<li style="margin-bottom:10px;">'
+                f'<strong>Corroborating Wire ({w.get("source", "Press")}):</strong> <a href="{w["url"]}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:none;">{w["title"][:75]}</a>'
                 f'</li>'
             )
 
         citations_html = ""
         if citations:
             citations_html = f'''
-            <div style="margin-top:40px; padding:24px; background:rgba(243,108,33,0.04); border-left:4px solid #F36C21; border-radius:0 16px 16px 0;">
-                <h3 style="margin:0 0 14px 0; font-size:17px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.04em;">
-                    📚 Documented Sources & Community Trails
+            <div style="margin-top:42px; padding:24px; background:rgba(243,108,33,0.03); border-left:4px solid #F36C21; border-radius:0 16px 16px 0;">
+                <h3 style="margin:0 0 14px 0; font-size:16px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.05em;">
+                    📚 Documented Sources & Community Verification Trails
                 </h3>
-                <ul style="list-style:none; padding:0; margin:0; line-height:1.7; font-size:14px;">
+                <ul style="list-style:none; padding:0; margin:0; line-height:1.75; font-size:14px;">
                     {"".join(citations)}
                 </ul>
             </div>
@@ -1214,22 +1678,125 @@ Respond in JSON format:
             <div style="margin-top:48px; padding-top:24px; border-top:1px solid rgba(0,0,0,0.08); text-align:center;">
                 <img src="data:image/png;base64,{logo_b64}" alt="ReadContext" style="max-height:42px; margin:0 auto 10px; display:block; opacity:0.9;" />
                 <div style="font-size:12px; color:#999; letter-spacing:1px; text-transform:uppercase;">
+                    ReadContext Independent Newsroom · Fully Compliant Autonomous Journalism
                 </div>
             </div>
             '''
 
+        # JSON-LD Structured Data for Google News & SEO
+        schema_json = json.dumps({
+            "@context": "https://schema.org",
+            "@type": "NewsArticle",
+            "headline": headline,
+            "description": meta_desc,
+            "image": [hero_url] if hero_url else [],
+            "datePublished": iso_date,
+            "dateModified": iso_date,
+            "author": [{
+                "@type": "Organization",
+                "name": "ReadContext Special Bureau",
+                "url": BLOG_URL
+            }],
+            "publisher": {
+                "@type": "Organization",
+                "name": "ReadContext",
+                "logo": {
+                    "@type": "ImageObject",
+                    "url": f"{BLOG_URL}/favicon.ico"
+                }
+            },
+            "mainEntityOfPage": {
+                "@type": "WebPage",
+                "@id": topic.get('source_url', BLOG_URL)
+            }
+        })
+
         html = f'''
-<div class="readcontext-article" style="line-height:1.85; color:#2a2a2a; font-size:17px;">
+<!-- SEO Structured Data -->
+<script type="application/ld+json">
+{schema_json}
+</script>
+
+<style>
+.readcontext-article {{
+    line-height: 1.85;
+    color: #2a2a2a;
+    font-size: 17px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}}
+.readcontext-article .article-content p {{
+    margin: 0 0 1.25em 0;
+    text-indent: 1.5em; /* Clean typographic paragraph indentation */
+    line-height: 1.85;
+    color: #2b2b2b;
+}}
+/* Lead paragraph and headings have zero indent for classic editorial flow */
+.readcontext-article .article-content > p:first-of-type,
+.readcontext-article .article-content h2 + p,
+.readcontext-article .article-content h3 + p,
+.readcontext-article .article-content blockquote + p {{
+    text-indent: 0 !important;
+}}
+.readcontext-article .article-content h2 {{
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 23px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-top: 36px;
+    margin-bottom: 14px;
+    line-height: 1.35;
+    border-bottom: 2px solid rgba(243, 108, 33, 0.2);
+    padding-bottom: 6px;
+}}
+.readcontext-article .article-content h3 {{
+    font-size: 18px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-top: 24px;
+    margin-bottom: 10px;
+    padding-left: 12px;
+    border-left: 3px solid #F36C21;
+}}
+.readcontext-article .article-content blockquote {{
+    margin: 26px 0;
+    padding: 16px 22px;
+    background: #fdfaf6;
+    border-left: 4px solid #F36C21;
+    font-style: italic;
+    font-size: 17px;
+    color: #333;
+    border-radius: 0 12px 12px 0;
+}}
+.readcontext-article .article-content blockquote cite {{
+    display: block;
+    font-size: 13px;
+    font-style: normal;
+    color: #777;
+    margin-top: 8px;
+    font-weight: 500;
+}}
+.readcontext-article .article-content ul,
+.readcontext-article .article-content ol {{
+    margin: 16px 0 20px 24px;
+    padding: 0;
+    line-height: 1.75;
+}}
+.readcontext-article .article-content li {{
+    margin-bottom: 8px;
+}}
+</style>
+
+<div class="readcontext-article">
 
     <!-- Editorial Kicker & Subtitle -->
     <div style="margin-bottom:12px;">
         <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
-            INVESTIGATIVE DISPATCH · {topic.get('source', 'GLOBAL WIRE').upper()}
+            {archetype['name'].upper()} · {topic.get('source', 'GLOBAL WIRE').upper()}
         </span>
     </div>
 
     <!-- Editorial Dek (Subtitle) -->
-    <p style="font-size:1.2em; line-height:1.5; color:#555; font-style:italic; margin:0 0 18px 0; font-weight:500;">
+    <p style="font-size:1.22em; line-height:1.5; color:#555; font-style:italic; margin:0 0 18px 0; font-weight:500;">
         {meta.get('dek', topic.get('description', ''))}
     </p>
 
@@ -1238,14 +1805,17 @@ Respond in JSON format:
         <div>
             By <strong style="color:#222;">ReadContext Special Bureau</strong> · <span>{date_str}</span>
         </div>
-        <div style="display:flex; gap:12px; align-items:center;">
-            <span>⏱️ 7 min read</span>
-            <span>⚡ Trending Resonance Score: {topic.get('virality_score', 12)}</span>
+        <div style="display:flex; gap:14px; align-items:center;">
+            <span>⏱️ {read_time} min read</span>
+            <span>⚡ Resonance Score: {topic.get('virality_score', 12)}</span>
         </div>
     </div>
 
     <!-- Hero Documentary Photo -->
     {hero_img_html}
+
+    <!-- Executive Takeaways -->
+    {takeaways_html}
 
     <!-- Article Narrative Body -->
     <div class="article-content">
@@ -1454,7 +2024,7 @@ def save_local_markdown(article):
         f"---\n\n"
     )
     with open(path, "w", encoding="utf-8") as f:
-        f.write(frontmatter + article["raw_text"])
+        f.write(frontmatter + article["html"])
     log("💾", f"Saved full local backup to: {path}")
     return path
 
@@ -1516,11 +2086,11 @@ def main():
     log("📌", f"Source: {selected_topic['source']} | Virality Score: {selected_topic.get('virality_score', 0)}")
     log("🔗", f"Reference URL: {selected_topic.get('source_url')}")
 
-    # 4. Deep Research (HN discussions, Reddit debates, quotes)
+    # 4. Deep Research (Web scraping, Reddit discussions, HN Algolia, quotes)
     dossier = researcher.deep_research(selected_topic)
 
-    # 5. Real Image Discovery & Vision Validation
-    images = image_collector.fetch_verified_images(selected_topic)
+    # 5. Real Image Discovery & Vision Validation (Prioritizes primary source lead image)
+    images = image_collector.fetch_verified_images(selected_topic, research_dossier=dossier)
     log("📸", f"Matched {len(images)} authentic real documentary image(s)")
 
     # 6. Generate Newspaper Article
