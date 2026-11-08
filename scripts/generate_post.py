@@ -1381,8 +1381,10 @@ Output the outline clearly with the custom H2 headings and Key Takeaways.
                 "• ADAPTIVE VOCABULARY: Match the natural language of the subject. A coffee gadget or consumer phone should be discussed in terms of user experience, build quality, and real-world testing. A security breach should focus on attack vectors and remediation. An AI launch should focus on computational capabilities.\n"
                 "• AUTHENTIC CITATIONS: Use the provided research quotes and community discussions from Reddit and Hacker News. Attribute them accurately.\n"
                 "• SUBSTANCE DEPTH: Comprehensive, authoritative reporting (1,500–2,200 words).\n"
-                "• SEMANTIC HTML OUTPUT: Output ONLY HTML using <h2>, <h3>, <p>, <blockquote>, <ul>, <li>, <strong>, <em>. Do NOT wrap in <html>, <body>, <head>, or <h1>. Always match and close tags properly (never close <h3> with </h2>).\n"
-                "• Begin immediately with a professional journalistic dateline (e.g. <strong>SAN FRANCISCO —</strong> or <strong>NEW YORK —</strong>)."
+                "• PARAGRAPH INDENTATION & STRUCTURE: Every single narrative paragraph MUST be wrapped in <p> tags. Never leave naked text lines or unformatted sentences. Keep each paragraph at 3 to 5 sentences so the typographic tab indentation is clearly visible.\n"
+                "• SUB-HEADINGS HIERARCHY: Structure sections with <h2> and indented subsections with <h3>. Always close tags with matching end tags (e.g. <h3>...</h3>).\n"
+                "• SEMANTIC HTML OUTPUT: Output ONLY semantic HTML content. Do NOT wrap in <html>, <body>, <head>, or <h1>.\n"
+                "• Begin immediately with a professional journalistic dateline inside a paragraph: <p><strong>SAN FRANCISCO —</strong> ...</p>"
             )},
             {"role": "user", "content": f"""
 Write an exhaustive, high-impact 1500–2200 word investigative article adhering strictly to this outline:
@@ -1573,10 +1575,6 @@ Respond in JSON format:
         headline = meta.get("headline", topic['title'])
         meta_desc = meta.get("description", topic['title'])
 
-        # Estimated reading time
-        word_count = len(clean_text(article_body).split())
-        read_time = max(4, round(word_count / 220))
-
         # Hero Image Frame
         hero_img_html = ""
         hero_url = ""
@@ -1630,42 +1628,102 @@ Respond in JSON format:
         </div>
         '''
 
-        # Citations & Verified Trails
+        # ── Citations & Related Documentation (No Repeating Brands, No Points/Scores) ──
+        def _get_brand(url_str, default_name="Document"):
+            try:
+                domain = urllib.parse.urlparse(url_str).netloc.lower()
+                domain = re.sub(r'^www\.', '', domain)
+                if "techcrunch.com" in domain:
+                    return "TechCrunch"
+                if "theverge.com" in domain:
+                    return "The Verge"
+                if "arstechnica.com" in domain:
+                    return "Ars Technica"
+                if "bbc." in domain:
+                    return "BBC News"
+                if "reddit.com" in domain:
+                    return "Reddit Community"
+                if "ycombinator.com" in domain:
+                    return "Hacker News"
+                if "github.com" in domain:
+                    return "GitHub Repository"
+                if "lemmy.world" in domain:
+                    return "Lemmy World"
+                if "slashdot.org" in domain:
+                    return "Slashdot"
+                if "producthunt.com" in domain:
+                    return "Product Hunt"
+                if "bloomberg.com" in domain:
+                    return "Bloomberg"
+                if "reuters.com" in domain:
+                    return "Reuters"
+                parts = domain.split('.')
+                return parts[0].capitalize() if parts else default_name
+            except Exception:
+                return default_name
+
         citations = []
+        seen_brands = set()
+
+        # 1. Primary Scraped Source
         if topic.get('source_url'):
-            citations.append(
-                f'<li style="margin-bottom:10px;">'
-                f'<strong>Primary Source Coverage:</strong> <a href="{topic["source_url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:600; text-decoration:underline;">{topic.get("source", "Official Press Wire")} — Original Reporting</a>'
-                f'</li>'
-            )
-        for h in research.get("hn_threads", [])[:3]:
-            citations.append(
-                f'<li style="margin-bottom:10px;">'
-                f'<strong>Hacker News Discussion:</strong> <a href="{h["url"]}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:none;">{h["title"][:75]}</a> '
-                f'<span style="color:#888; font-size:12px;">({h.get("points", 0)} points · {h.get("comments", 0)} comments)</span>'
-                f'</li>'
-            )
-        for r in research.get("reddit_reactions", [])[:3]:
-            citations.append(
-                f'<li style="margin-bottom:10px;">'
-                f'<strong>Reddit Community Thread [{r.get("subreddit", "r/tech")}]:</strong> <a href="{r["url"]}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:none;">{r["title"][:75]}</a>'
-                f'</li>'
-            )
-        for w in research.get("cross_web_reports", [])[:2]:
-            citations.append(
-                f'<li style="margin-bottom:10px;">'
-                f'<strong>Corroborating Wire ({w.get("source", "Press")}):</strong> <a href="{w["url"]}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:none;">{w["title"][:75]}</a>'
-                f'</li>'
-            )
+            brand = _get_brand(topic['source_url'], topic.get('source', 'Press Wire'))
+            if brand not in seen_brands:
+                seen_brands.add(brand)
+                citations.append(
+                    f'<li style="margin-bottom:12px; line-height:1.6;">'
+                    f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">{brand}:</span> '
+                    f'<a href="{topic["source_url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">Original Investigative Coverage</a>'
+                    f'</li>'
+                )
+
+        # 2. Reddit Discussions (distinct brand, zero karma/points numbers displayed)
+        for r in research.get("reddit_reactions", []):
+            if "Reddit Community" not in seen_brands and r.get("url"):
+                seen_brands.add("Reddit Community")
+                citations.append(
+                    f'<li style="margin-bottom:12px; line-height:1.6;">'
+                    f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">Reddit:</span> '
+                    f'<a href="{r["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{r["title"][:85]}</a>'
+                    f'</li>'
+                )
+                break
+
+        # 3. Hacker News Technical Discussion (distinct brand, zero points/karma displayed)
+        for h in research.get("hn_threads", []):
+            if "Hacker News" not in seen_brands and h.get("url"):
+                seen_brands.add("Hacker News")
+                citations.append(
+                    f'<li style="margin-bottom:12px; line-height:1.6;">'
+                    f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">Hacker News:</span> '
+                    f'<a href="{h["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{h["title"][:85]}</a>'
+                    f'</li>'
+                )
+                break
+
+        # 4. Cross-Web Secondary Wire Reports (only if different brand)
+        for w in research.get("cross_web_reports", []):
+            if w.get("url"):
+                w_brand = _get_brand(w['url'], w.get('source', 'Press Wire'))
+                if w_brand not in seen_brands:
+                    seen_brands.add(w_brand)
+                    citations.append(
+                        f'<li style="margin-bottom:12px; line-height:1.6;">'
+                        f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">{w_brand}:</span> '
+                        f'<a href="{w["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{w["title"][:85]}</a>'
+                        f'</li>'
+                    )
+            if len(citations) >= 4:
+                break
 
         citations_html = ""
         if citations:
             citations_html = f'''
             <div style="margin-top:42px; padding:24px; background:rgba(243,108,33,0.03); border-left:4px solid #F36C21; border-radius:0 16px 16px 0;">
                 <h3 style="margin:0 0 14px 0; font-size:16px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.05em;">
-                    📚 Documented Sources & Community Verification Trails
+                    🔗 Related Documentation & Research Across the Web
                 </h3>
-                <ul style="list-style:none; padding:0; margin:0; line-height:1.75; font-size:14px;">
+                <ul style="list-style:none; padding:0; margin:0; line-height:1.75; font-size:14.5px;">
                     {"".join(citations)}
                 </ul>
             </div>
@@ -1725,17 +1783,10 @@ Respond in JSON format:
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }}
 .readcontext-article .article-content p {{
-    margin: 0 0 1.25em 0;
-    text-indent: 1.5em; /* Clean typographic paragraph indentation */
-    line-height: 1.85;
+    margin: 0 0 1.35em 0 !important;
+    text-indent: 2.4em !important; /* Clear tab space indentation on every paragraph */
+    line-height: 1.88 !important;
     color: #2b2b2b;
-}}
-/* Lead paragraph and headings have zero indent for classic editorial flow */
-.readcontext-article .article-content > p:first-of-type,
-.readcontext-article .article-content h2 + p,
-.readcontext-article .article-content h3 + p,
-.readcontext-article .article-content blockquote + p {{
-    text-indent: 0 !important;
 }}
 .readcontext-article .article-content h2 {{
     font-family: 'Playfair Display', Georgia, serif;
@@ -1752,10 +1803,11 @@ Respond in JSON format:
     font-size: 18px;
     font-weight: 600;
     color: #2c3e50;
-    margin-top: 24px;
-    margin-bottom: 10px;
-    padding-left: 12px;
-    border-left: 3px solid #F36C21;
+    margin-top: 26px;
+    margin-bottom: 12px;
+    padding-left: 14px;
+    margin-left: 1.5em; /* Tab indented subsection */
+    border-left: 3.5px solid #F36C21;
 }}
 .readcontext-article .article-content blockquote {{
     margin: 26px 0;
@@ -1788,10 +1840,10 @@ Respond in JSON format:
 
 <div class="readcontext-article">
 
-    <!-- Editorial Kicker & Subtitle -->
+    <!-- Editorial Kicker (Source name kept in backend only, never exposed at top) -->
     <div style="margin-bottom:12px;">
         <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
-            {archetype['name'].upper()} · {topic.get('source', 'GLOBAL WIRE').upper()}
+            SPECIAL REPORT · {archetype['name'].upper()}
         </span>
     </div>
 
@@ -1800,14 +1852,13 @@ Respond in JSON format:
         {meta.get('dek', topic.get('description', ''))}
     </p>
 
-    <!-- Byline & Metadata Bar -->
-    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#777;">
+    <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#666;">
         <div>
-            By <strong style="color:#222;">ReadContext Special Bureau</strong> · <span>{date_str}</span>
+            By <strong style="color:#222;">ReadContext Special Bureau</strong>
         </div>
-        <div style="display:flex; gap:14px; align-items:center;">
-            <span>⏱️ {read_time} min read</span>
-            <span>⚡ Resonance Score: {topic.get('virality_score', 12)}</span>
+        <div>
+            📅 <span>Published on {now.strftime("%B %d, %Y · %I:%M %p UTC")}</span>
         </div>
     </div>
 
@@ -1825,7 +1876,7 @@ Respond in JSON format:
     <!-- Secondary Visual -->
     {secondary_img_html}
 
-    <!-- Citations & References -->
+    <!-- Related Documentation & Research on the Internet (No Repeating Brands) -->
     {citations_html}
 
     <!-- Branded Signature -->
