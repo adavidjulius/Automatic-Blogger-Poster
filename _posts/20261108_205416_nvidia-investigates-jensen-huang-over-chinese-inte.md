@@ -47,19 +47,7 @@ word_count: 1507
             </div>
             
 
-    <!-- Executive Takeaways -->
     
-        <div style="margin:24px 0 32px 0; padding:20px 24px; background:linear-gradient(135deg, rgba(243,108,33,0.05) 0%, rgba(243,108,33,0.01) 100%); border-left:4px solid #F36C21; border-radius:0 14px 14px 0; box-shadow:0 4px 16px rgba(0,0,0,0.02);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-                <span style="font-size:18px;">⚡</span>
-                <h3 style="margin:0; font-size:15px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.06em;">
-                    Executive Key Takeaways
-                </h3>
-            </div>
-            <ul style="margin:0; padding-left:20px; font-size:15px; line-height:1.65; color:#333;">
-                <li style='margin-bottom:8px; padding-left:4px;'>The NVIDIA Board initiated an independent investigation, not based on confirmed compromise, but on intelligence reports.</li><li style='margin-bottom:8px; padding-left:4px;'>The inquiry specifically examines the relationship between CEO Jensen Huang and Megaspeed executive Alice Huang.</li><li style='margin-bottom:8px; padding-left:4px;'>Oversight is managed by a committee of independent directors and outside counsel.</li>
-            </ul>
-        </div>
         
 
     <!-- Article Narrative Body -->
@@ -146,15 +134,17 @@ word_count: 1507
 <!-- Responsive Newspaper Styling -->
 <style>
 .readcontext-article {
-    line-height: 1.85;
+    line-height: 1.68 !important;
+    margin: 0 0 14px 0 !important;
     color: #2a2a2a;
     font-size: 17px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 .readcontext-article .article-content p {
     margin: 0 0 1.25em 0;
-    text-indent: 1.5em; /* Clean typographic paragraph indentation */
-    line-height: 1.85;
+    text-indent: 0 !important; /* Clean modern web typography */
+    line-height: 1.68 !important;
+    margin: 0 0 14px 0 !important;
     color: #2b2b2b;
 }
 /* Lead paragraph and headings have zero indent for classic editorial flow */

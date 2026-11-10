@@ -45,19 +45,7 @@ word_count: 1716
             </div>
             
 
-    <!-- Executive Takeaways -->
     
-        <div style="margin:24px 0 32px 0; padding:20px 24px; background:linear-gradient(135deg, rgba(243,108,33,0.05) 0%, rgba(243,108,33,0.01) 100%); border-left:4px solid #F36C21; border-radius:0 14px 14px 0; box-shadow:0 4px 16px rgba(0,0,0,0.02);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-                <span style="font-size:18px;">⚡</span>
-                <h3 style="margin:0; font-size:15px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.06em;">
-                    Executive Key Takeaways
-                </h3>
-            </div>
-            <ul style="margin:0; padding-left:20px; font-size:15px; line-height:1.65; color:#333;">
-                <li style='margin-bottom:8px; padding-left:4px;'>TK embeds AI assistance directly within the Medium editor, triggered by the "@TK" command.</li><li style='margin-bottom:8px; padding-left:4px;'>Initial features include answering factual queries and referencing user-saved draft material.</li><li style='margin-bottom:8px; padding-left:4px;'>The application offers specific editorial feedback matching Medium publication style guides.</li>
-            </ul>
-        </div>
         
 
     <!-- Article Narrative Body -->
@@ -189,8 +177,9 @@ word_count: 1716
 }
 .readcontext-article .article-content p {
     margin: 0 0 1.35em 0 !important;
-    text-indent: 2.4em !important; /* Clear tab space indentation on every paragraph */
-    line-height: 1.88 !important;
+    text-indent: 0 !important; /* Clean modern web typography with no awkward tab gaps */
+    line-height: 1.68 !important;
+    margin: 0 0 14px 0 !important;
     color: #2b2b2b;
 }
 .readcontext-article .article-content h2 {

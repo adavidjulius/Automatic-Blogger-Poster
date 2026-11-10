@@ -37,27 +37,15 @@ word_count: 1793
                     <img src="https://ichef.bbci.co.uk/ace/branded_news/1200/cpsprodpb/7f5c/live/7cc0b9e0-dc6c-11f1-b441-2b33b063138f.jpg" alt="Nvidia Shares Dip Amid Probe into Jensen Huang's Alleged Affair"
                          style="width:100%; max-height:540px; object-fit:cover; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,0.08); display:block;"
                          loading="eager" />
-                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:#777; margin-top:10px; padding:0 6px;">
-                        <span>📸 3. A close-up portrait of Nvidia CEO Jensen Huang looking off-camera with a serious expression.</span>
-                        <span style="font-style:italic;">Credit: Original Press Asset / BBC Technology</span>
+                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#777; margin-top:8px; padding:0 4px;">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; text-align:left;">Jensen Huang under corporate governance review</span>
+                        <span style="font-style:italic; font-size:11.5px; white-space:nowrap; color:#999; margin-left:12px;">Source: BBC Technology</span>
                     </figcaption>
                 </figure>
             </div>
             
 
-    <!-- Executive Takeaways -->
     
-        <div style="margin:24px 0 32px 0; padding:20px 24px; background:linear-gradient(135deg, rgba(243,108,33,0.05) 0%, rgba(243,108,33,0.01) 100%); border-left:4px solid #F36C21; border-radius:0 14px 14px 0; box-shadow:0 4px 16px rgba(0,0,0,0.02);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-                <span style="font-size:18px;">⚡</span>
-                <h3 style="margin:0; font-size:15px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.06em;">
-                    Executive Key Takeaways
-                </h3>
-            </div>
-            <ul style="margin:0; padding-left:20px; font-size:15px; line-height:1.65; color:#333;">
-                <li style='margin-bottom:8px; padding-left:4px;'>Nvidia shares experienced a notable decline following the announcement of an internal probe into CEO Jensen Huang.</li><li style='margin-bottom:8px; padding-left:4px;'>The company has stated it found no basis to believe its secrets or national security were compromised.</li><li style='margin-bottom:8px; padding-left:4px;'>China's foreign ministry has officially dismissed the espionage allegations as "entirely groundless."</li>
-            </ul>
-        </div>
         
 
     <!-- Article Narrative Body -->
@@ -196,8 +184,9 @@ word_count: 1793
 }
 .readcontext-article .article-content p {
     margin: 0 0 1.35em 0 !important;
-    text-indent: 2.4em !important; /* Clear tab space indentation on every paragraph */
-    line-height: 1.88 !important;
+    text-indent: 0 !important; /* Clean modern web typography with no awkward tab gaps */
+    line-height: 1.68 !important;
+    margin: 0 0 14px 0 !important;
     color: #2b2b2b;
 }
 .readcontext-article .article-content h2 {

@@ -816,7 +816,7 @@ class WebResearcher:
     def __init__(self, ai_client):
         self.ai = ai_client
 
-    def deep_research(self, topic):
+    def deep_research(self, topic, candidate_pool=None):
         log("🔍", f"Conducting multi-source deep research on: '{topic['title'][:60]}...'")
         queries = self.ai.generate_tool_queries(topic['title'], topic.get('description', ''))
 
@@ -828,16 +828,49 @@ class WebResearcher:
             "hn_threads": [],
             "reddit_reactions": [],
             "cross_web_reports": [],
+            "community_discussions": [],
             "search_queries": queries,
             "real_quotes": []
         }
 
-        # Concurrently gather primary source text, Reddit discussions, HN Algolia, and Google News
-        with ThreadPoolExecutor(max_workers=4) as executor:
+        # Cross-reference correlated stories from the harvested multi-platform candidate pool
+        if candidate_pool:
+            topic_kw = set(extract_keywords(topic['title']))
+            for item in candidate_pool:
+                if item.get('source_url') == topic.get('source_url'):
+                    continue
+                item_kw = set(extract_keywords(item['title']))
+                if len(topic_kw & item_kw) >= 2:
+                    src = item.get('source', '')
+                    if 'reddit' in src.lower() or 'r/' in src.lower():
+                        research_dossier['reddit_reactions'].append({
+                            'title': item['title'],
+                            'url': item.get('source_url', ''),
+                            'subreddit': src,
+                            'score': item.get('base_score', 15),
+                            'comments': 12
+                        })
+                    elif any(s in src.lower() for s in ['lemmy', 'slashdot', 'bluesky', 'quora']):
+                        research_dossier['community_discussions'].append({
+                            'title': item['title'],
+                            'url': item.get('source_url', ''),
+                            'source': src
+                        })
+                    else:
+                        research_dossier['cross_web_reports'].append({
+                            'title': item['title'],
+                            'url': item.get('source_url', ''),
+                            'source': src,
+                            'snippet': item.get('description', '')
+                        })
+
+        # Concurrently gather primary source text, Reddit discussions, HN Algolia, Lemmy, and Google News
+        with ThreadPoolExecutor(max_workers=5) as executor:
             f_scrape = executor.submit(self._scrape_source_article, topic.get('source_url', ''))
             f_hn = executor.submit(self._query_hn_algolia, topic['title'], queries)
             f_reddit = executor.submit(self._query_reddit_discussions, topic['title'], queries)
             f_web = executor.submit(self._query_cross_web, topic['title'], queries)
+            f_lemmy = executor.submit(self._query_lemmy_discussions, topic['title'])
 
             try:
                 scraped_info = f_scrape.result(timeout=12)
@@ -857,13 +890,26 @@ class WebResearcher:
 
             try:
                 reddit_res = f_reddit.result(timeout=12)
-                research_dossier['reddit_reactions'] = reddit_res.get('threads', [])
+                for t in reddit_res.get('threads', []):
+                    if not any(t['url'] == r.get('url') for r in research_dossier['reddit_reactions']):
+                        research_dossier['reddit_reactions'].append(t)
                 research_dossier['real_quotes'].extend(reddit_res.get('quotes', []))
             except Exception:
                 pass
 
             try:
-                research_dossier['cross_web_reports'] = f_web.result(timeout=10)
+                web_res = f_web.result(timeout=10)
+                for w in web_res:
+                    if not any(w['url'] == r.get('url') for r in research_dossier['cross_web_reports']):
+                        research_dossier['cross_web_reports'].append(w)
+            except Exception:
+                pass
+
+            try:
+                lemmy_res = f_lemmy.result(timeout=8)
+                for l in lemmy_res:
+                    if not any(l['url'] == c.get('url') for c in research_dossier['community_discussions']):
+                        research_dossier['community_discussions'].append(l)
             except Exception:
                 pass
 
@@ -871,7 +917,8 @@ class WebResearcher:
             len(research_dossier['scraped_facts']) +
             len(research_dossier['hn_threads']) +
             len(research_dossier['reddit_reactions']) +
-            len(research_dossier['cross_web_reports'])
+            len(research_dossier['cross_web_reports']) +
+            len(research_dossier['community_discussions'])
         )
         log("📑", f"Dossier ready with {total_intel} intel items & {len(research_dossier['real_quotes'])} real quotes")
         return research_dossier
@@ -1072,6 +1119,35 @@ class WebResearcher:
                             "source": entry.get('source', {}).get('title', 'News Wire'),
                             "snippet": clean_text(entry.get('summary', ''))[:220]
                         })
+        except Exception:
+            pass
+        return results
+
+    def _query_lemmy_discussions(self, title):
+        """Queries decentralized Lemmy technology community for open public discussions."""
+        results = []
+        kw = extract_keywords(title)[:2]
+        if not kw:
+            return results
+        try:
+            resp = SESSION.get(
+                "https://lemmy.world/api/v3/post/list",
+                params={"community_name": "technology", "sort": "TopDay", "limit": 10},
+                timeout=6
+            )
+            if resp.status_code == 200:
+                posts = resp.json().get("posts", [])
+                for p in posts:
+                    name = p.get("post", {}).get("name", "")
+                    p_kw = set(extract_keywords(name))
+                    if len(set(kw) & p_kw) >= 1:
+                        safe, _ = ContentComplianceGuard.evaluate(name)
+                        if safe:
+                            results.append({
+                                "title": name,
+                                "url": p.get("post", {}).get("ap_id") or p.get("post", {}).get("url", ""),
+                                "source": "Lemmy Tech Community"
+                            })
         except Exception:
             pass
         return results
@@ -1352,13 +1428,12 @@ MULTI-SOURCE RESEARCH DOSSIER (Scraped facts, Reddit discussions, HN signals, Re
 CRITICAL EDITORIAL RULES:
 1. Do NOT use generic canned headings like "The Genesis of the Shift", "Technical Architecture & Core Mechanics", "Industry Winners and Losers", or "The Road Ahead".
 2. Instead, craft 3-4 bespoke, natural H2 section headings tailored for a fast 4-minute mobile read, mentioning the actual names, products, technologies, or controversies from this story.
-3. Formulate 3 concrete Key Takeaways (factual, punchy, and concise).
-4. Provide a 1-sentence journalistic Dek (subtitle).
+3. Provide a 1-sentence journalistic Dek (subtitle).
 
-Output the outline clearly with the custom H2 headings and Key Takeaways.
+Output the outline clearly with the custom H2 headings and the 1-sentence Dek.
 """}
         ]
-        outline = self.ai.generate(outline_prompt, max_tokens=1200, temperature=0.6, timeout=35.0)
+        outline = self.ai.generate(outline_prompt, max_tokens=1000, temperature=0.6, timeout=35.0)
         if not outline:
             log("❌", "Outline generation failed.")
             return None
@@ -1379,9 +1454,9 @@ Output the outline clearly with the custom H2 headings and Key Takeaways.
                 "  - Do NOT write 'In today's fast-paced digital world'\n"
                 "  - Do NOT write 'Only time will tell' or 'A double-edged sword'\n"
                 "• ADAPTIVE VOCABULARY: Match the natural language of the subject. A coffee gadget or consumer phone should be discussed in terms of user experience, build quality, and real-world testing. A security breach should focus on attack vectors and remediation. An AI launch should focus on computational capabilities.\n"
-                "• AUTHENTIC CITATIONS: Use the provided research quotes and community discussions from Reddit and Hacker News. Attribute them accurately.\n"
+                "• BALANCED MULTI-SOURCE CITATIONS: You MUST cite and attribute perspectives across diverse platforms — do NOT repeatedly rely on or name 'Hacker News'. Draw naturally from primary wire coverage (The Verge, Reuters, BBC, Ars Technica, TechCrunch), Reddit community discussions (r/technology, r/programming), and open technical forums. Attribute quotes to their real reporting sources or communities (e.g. 'According to reporting in The Verge', 'Community debates on Reddit emphasized...', 'As noted in financial filings...').\n"
                 "• SUBSTANCE & MOBILE READABILITY: Fast-paced, punchy, authoritative reporting (strictly 800–1,050 words, designed for under a 5-minute read time for mobile readers).\n"
-                "• PARAGRAPH INDENTATION & STRUCTURE: Every single narrative paragraph MUST be wrapped in <p> tags. Never leave naked text lines or unformatted sentences. Keep each paragraph at 3 to 4 sentences so the typographic tab indentation is clearly visible.\n"
+                "• CLEAN EDITORIAL PROSE & PARAGRAPH FLOW: Wrap every narrative paragraph in clean semantic <p> tags. Write in cohesive, comfortable paragraphs (3 to 5 sentences each) with standard left alignment and no awkward spaces, gaps, or empty line breaks.\n"
                 "• SUB-HEADINGS HIERARCHY: Structure sections with <h2> and indented subsections with <h3>. Always close tags with matching end tags (e.g. <h3>...</h3>).\n"
                 "• SEMANTIC HTML OUTPUT: Output ONLY semantic HTML content. Do NOT wrap in <html>, <body>, <head>, or <h1>.\n"
                 "• Begin immediately with a professional journalistic dateline inside a paragraph: <p><strong>SAN FRANCISCO —</strong> ...</p>"
@@ -1441,9 +1516,8 @@ STRUCTURE INSTRUCTIONS:
                     word_count = cand_words
                     log("✅", f"Article expanded to mobile-optimized depth: {word_count} words")
 
-        # ── Step 3: Extract Key Takeaways & SEO Metadata ───────────────────
+        # ── Step 3: Extract SEO Metadata ──────────────────────────────────
         meta = self._generate_seo(topic, cleaned_body)
-        takeaways = self._extract_takeaways(outline, cleaned_body)
 
         # ── Step 4: Assemble Native ReadContext Presentation ───────────────
         final_layout = self._render_readcontext_layout(
@@ -1452,7 +1526,6 @@ STRUCTURE INSTRUCTIONS:
             images=images,
             research=research,
             meta=meta,
-            takeaways=takeaways,
             archetype=archetype
         )
 
@@ -1479,35 +1552,41 @@ STRUCTURE INSTRUCTIONS:
     def _synthesize_research(self, research):
         lines = []
 
-        # 1. Primary Scraped Facts
+        # 1. Primary Scraped Facts & Ground Truth
         if research.get("scraped_facts"):
-            lines.append("PRIMARY SOURCE GROUND TRUTH (Directly Scraped):")
+            lines.append("PRIMARY INVESTIGATIVE REPORTING (Directly Scraped from Source):")
             for p in research["scraped_facts"][:5]:
                 lines.append(f"  • {p}")
 
-        # 2. Real Quotes
+        # 2. Documented Quotes & Primary Statements
         if research.get("real_quotes"):
-            lines.append("\nDOCUMENTED QUOTES & STATEMENTS:")
+            lines.append("\nDOCUMENTED QUOTES & OFFICIAL STATEMENTS:")
             for q in research["real_quotes"][:4]:
                 lines.append(f"  • \"{q['quote']}\" ({q.get('source', 'Report')})")
 
-        # 3. Reddit Community Debates
+        # 3. Reddit Community Debates & User Perspectives
         if research.get("reddit_reactions"):
             lines.append("\nREDDIT COMMUNITY PERSPECTIVES & DEBATES:")
             for r in research["reddit_reactions"][:4]:
-                lines.append(f"  • [{r.get('subreddit', 'r/tech')}] \"{r['title']}\" ({r.get('score', 0)} upvotes, {r.get('comments', 0)} comments) — {r.get('url')}")
+                lines.append(f"  • [{r.get('subreddit', 'r/technology')}] \"{r['title']}\" — {r.get('url')}")
 
-        # 4. Hacker News Signals
-        if research.get("hn_threads"):
-            lines.append("\nHACKER NEWS TECHNICAL DISCUSSIONS:")
-            for h in research["hn_threads"][:4]:
-                lines.append(f"  • \"{h['title']}\" ({h.get('points')} pts, {h.get('comments')} comments) — {h.get('url')}")
-
-        # 5. Cross-Web Coverage
+        # 4. Cross-Web Wire Reports (The Verge, Reuters, BBC, Ars Technica)
         if research.get("cross_web_reports"):
-            lines.append("\nCORROBORATING NEWS COVERAGE:")
-            for w in research["cross_web_reports"][:3]:
-                lines.append(f"  • {w.get('source', 'Wire')}: \"{w['title']}\" — {w.get('snippet', '')}")
+            lines.append("\nCORROBORATING NEWS COVERAGE & WIRE REPORTS:")
+            for w in research["cross_web_reports"][:4]:
+                lines.append(f"  • {w.get('source', 'Press Wire')}: \"{w['title']}\" — {w.get('snippet', '')}")
+
+        # 5. Open Community & Forum Discussions (Lemmy, Slashdot)
+        if research.get("community_discussions"):
+            lines.append("\nCOMMUNITY FORUM SIGNALS:")
+            for c in research["community_discussions"][:3]:
+                lines.append(f"  • [{c.get('source', 'Community Forum')}]: \"{c['title']}\" — {c.get('url')}")
+
+        # 6. Technical Forum Signals (Hacker News)
+        if research.get("hn_threads"):
+            lines.append("\nTECHNICAL FORUM SIGNALS:")
+            for h in research["hn_threads"][:3]:
+                lines.append(f"  • \"{h['title']}\" — {h.get('url')}")
 
         if not lines:
             lines.append("Multi-platform discourse indicates significant industry debate regarding practical trade-offs and future roadmaps.")
@@ -1564,11 +1643,11 @@ Respond in JSON format:
             "tags": extract_keywords(topic['title'])[:5]
         }
 
-    def _render_readcontext_layout(self, topic, article_body, images, research, meta, takeaways, archetype):
+    def _render_readcontext_layout(self, topic, article_body, images, research, meta, archetype):
         """
         Creates a custom responsive newspaper layout tailored for readcontext.blogspot.com:
-        Warm orange accents (#F36C21), Playfair Display styling, clean cards,
-        proper paragraph indentation, pull quotes, and real source attributions.
+        Warm orange accents (#F36C21), clean modern web typography (no huge tab indents, no excessive gaps),
+        concise image captions with corner sources, and balanced multi-platform citations.
         """
         now = datetime.now(timezone.utc)
         date_str = now.strftime("%B %d, %Y")
@@ -1576,58 +1655,61 @@ Respond in JSON format:
         headline = meta.get("headline", topic['title'])
         meta_desc = meta.get("description", topic['title'])
 
-        # Hero Image Frame
+        # Hero Image Frame (Short clean context + source at the corner)
         hero_img_html = ""
         hero_url = ""
         if images:
             hero = images[0]
             hero_url = hero['url']
+            caption = hero.get('caption', headline).strip()
+            caption = re.sub(r'^\d+[\.\)]\s*', '', caption)
+            caption = re.sub(r'^[📸📷]\s*', '', caption)
+            if len(caption) > 65:
+                caption = caption[:62].rsplit(' ', 1)[0] + '...'
+            source_name = hero.get('source', 'Press Wire').strip()
+            if len(source_name) > 25:
+                source_name = source_name[:22] + '...'
+
             hero_img_html = f'''
-            <div style="margin:24px 0 28px 0; text-align:center;">
+            <div style="margin:20px 0 24px 0; text-align:center;">
                 <figure style="margin:0; padding:0;">
-                    <img src="{hero['url']}" alt="{headline}"
-                         style="width:100%; max-height:540px; object-fit:cover; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,0.08); display:block;"
+                    <img src="{hero_url}" alt="{headline}"
+                         style="width:100%; max-height:500px; object-fit:cover; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,0.08); display:block;"
                          loading="eager" />
-                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:#777; margin-top:10px; padding:0 6px;">
-                        <span>📸 {hero.get('caption', 'Editorial Documentary Visual')}</span>
-                        <span style="font-style:italic;">Credit: {hero.get('source', 'Press Wire')}</span>
+                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#777; margin-top:8px; padding:0 4px;">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; text-align:left;">{caption}</span>
+                        <span style="font-style:italic; font-size:11.5px; white-space:nowrap; color:#999; margin-left:12px;">Source: {source_name}</span>
                     </figcaption>
                 </figure>
             </div>
             '''
 
-        # Secondary Image Frame
+        # Secondary Image Frame (Short clean context + source at the corner)
         secondary_img_html = ""
         if len(images) > 1:
             sec = images[1]
+            sec_caption = sec.get('caption', 'Supporting analysis').strip()
+            sec_caption = re.sub(r'^\d+[\.\)]\s*', '', sec_caption)
+            sec_caption = re.sub(r'^[📸📷]\s*', '', sec_caption)
+            if len(sec_caption) > 65:
+                sec_caption = sec_caption[:62].rsplit(' ', 1)[0] + '...'
+            sec_source = sec.get('source', 'Editorial Archive').strip()
+            if len(sec_source) > 25:
+                sec_source = sec_source[:22] + '...'
+
             secondary_img_html = f'''
-            <div style="margin:34px 0; text-align:center;">
+            <div style="margin:28px 0; text-align:center;">
                 <figure style="margin:0; padding:0;">
-                    <img src="{sec['url']}" alt="Contextual Analysis Visual"
-                         style="width:100%; max-height:420px; object-fit:cover; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,0.06); display:block;"
+                    <img src="{sec['url']}" alt="Contextual Documentation"
+                         style="width:100%; max-height:400px; object-fit:cover; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.06); display:block;"
                          loading="lazy" />
-                    <figcaption style="font-size:12.5px; color:#777; margin-top:8px; text-align:center; font-style:italic;">
-                        {sec.get('caption', 'Supporting technical documentation')} · <span>{sec.get('source', 'Archival Wire')}</span>
+                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#777; margin-top:8px; padding:0 4px;">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; text-align:left;">{sec_caption}</span>
+                        <span style="font-style:italic; font-size:11.5px; white-space:nowrap; color:#999; margin-left:12px;">Source: {sec_source}</span>
                     </figcaption>
                 </figure>
             </div>
             '''
-
-        # Executive Takeaways Box
-        takeaways_items = "".join(f"<li style='margin-bottom:8px; padding-left:4px;'>{t}</li>" for t in takeaways)
-        takeaways_html = f'''
-        <div style="margin:24px 0 32px 0; padding:20px 24px; background:linear-gradient(135deg, rgba(243,108,33,0.05) 0%, rgba(243,108,33,0.01) 100%); border-left:4px solid #F36C21; border-radius:0 14px 14px 0; box-shadow:0 4px 16px rgba(0,0,0,0.02);">
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-                <span style="font-size:18px;">⚡</span>
-                <h3 style="margin:0; font-size:15px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.06em;">
-                    Executive Key Takeaways
-                </h3>
-            </div>
-            <ul style="margin:0; padding-left:20px; font-size:15px; line-height:1.65; color:#333;">
-                {takeaways_items}
-            </ul>
-        </div>
-        '''
 
         # ── Citations & Related Documentation (No Repeating Brands, No Points/Scores) ──
         def _get_brand(url_str, default_name="Document"):
@@ -1643,11 +1725,11 @@ Respond in JSON format:
                 if "bbc." in domain:
                     return "BBC News"
                 if "reddit.com" in domain:
-                    return "Reddit Community"
+                    return "Reddit"
                 if "ycombinator.com" in domain:
                     return "Hacker News"
                 if "github.com" in domain:
-                    return "GitHub Repository"
+                    return "GitHub"
                 if "lemmy.world" in domain:
                     return "Lemmy World"
                 if "slashdot.org" in domain:
@@ -1672,59 +1754,75 @@ Respond in JSON format:
             if brand not in seen_brands:
                 seen_brands.add(brand)
                 citations.append(
-                    f'<li style="margin-bottom:12px; line-height:1.6;">'
-                    f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">{brand}:</span> '
+                    f'<li style="margin-bottom:10px; line-height:1.5;">'
+                    f'<span style="display:inline-block; min-width:130px; font-weight:700; color:#333;">{brand}:</span> '
                     f'<a href="{topic["source_url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">Original Investigative Coverage</a>'
                     f'</li>'
                 )
 
         # 2. Reddit Discussions (distinct brand, zero karma/points numbers displayed)
         for r in research.get("reddit_reactions", []):
-            if "Reddit Community" not in seen_brands and r.get("url"):
-                seen_brands.add("Reddit Community")
+            if "Reddit" not in seen_brands and r.get("url"):
+                seen_brands.add("Reddit")
                 citations.append(
-                    f'<li style="margin-bottom:12px; line-height:1.6;">'
-                    f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">Reddit:</span> '
-                    f'<a href="{r["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{r["title"][:85]}</a>'
+                    f'<li style="margin-bottom:10px; line-height:1.5;">'
+                    f'<span style="display:inline-block; min-width:130px; font-weight:700; color:#333;">Reddit:</span> '
+                    f'<a href="{r["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{r["title"][:80]}</a>'
                     f'</li>'
                 )
                 break
 
-        # 3. Hacker News Technical Discussion (distinct brand, zero points/karma displayed)
-        for h in research.get("hn_threads", []):
-            if "Hacker News" not in seen_brands and h.get("url"):
-                seen_brands.add("Hacker News")
-                citations.append(
-                    f'<li style="margin-bottom:12px; line-height:1.6;">'
-                    f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">Hacker News:</span> '
-                    f'<a href="{h["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{h["title"][:85]}</a>'
-                    f'</li>'
-                )
-                break
-
-        # 4. Cross-Web Secondary Wire Reports (only if different brand)
+        # 3. Cross-Web Secondary Wire Reports (The Verge, Reuters, BBC, Ars Technica)
         for w in research.get("cross_web_reports", []):
             if w.get("url"):
                 w_brand = _get_brand(w['url'], w.get('source', 'Press Wire'))
                 if w_brand not in seen_brands:
                     seen_brands.add(w_brand)
                     citations.append(
-                        f'<li style="margin-bottom:12px; line-height:1.6;">'
-                        f'<span style="display:inline-block; min-width:140px; font-weight:700; color:#333;">{w_brand}:</span> '
-                        f'<a href="{w["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{w["title"][:85]}</a>'
+                        f'<li style="margin-bottom:10px; line-height:1.5;">'
+                        f'<span style="display:inline-block; min-width:130px; font-weight:700; color:#333;">{w_brand}:</span> '
+                        f'<a href="{w["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{w["title"][:80]}</a>'
                         f'</li>'
                     )
             if len(citations) >= 4:
                 break
 
+        # 4. Lemmy / Slashdot / Community Discussions
+        for c in research.get("community_discussions", []):
+            if c.get("url"):
+                c_brand = _get_brand(c['url'], c.get('source', 'Community Forum'))
+                if c_brand not in seen_brands:
+                    seen_brands.add(c_brand)
+                    citations.append(
+                        f'<li style="margin-bottom:10px; line-height:1.5;">'
+                        f'<span style="display:inline-block; min-width:130px; font-weight:700; color:#333;">{c_brand}:</span> '
+                        f'<a href="{c["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{c["title"][:80]}</a>'
+                        f'</li>'
+                    )
+            if len(citations) >= 4:
+                break
+
+        # 5. Hacker News Technical Discussion (only if under 4 citations)
+        if len(citations) < 4:
+            for h in research.get("hn_threads", []):
+                if "Hacker News" not in seen_brands and h.get("url"):
+                    seen_brands.add("Hacker News")
+                    citations.append(
+                        f'<li style="margin-bottom:10px; line-height:1.5;">'
+                        f'<span style="display:inline-block; min-width:130px; font-weight:700; color:#333;">Hacker News:</span> '
+                        f'<a href="{h["url"]}" target="_blank" rel="noopener" style="color:#F36C21; font-weight:500; text-decoration:underline;">{h["title"][:80]}</a>'
+                        f'</li>'
+                    )
+                    break
+
         citations_html = ""
         if citations:
             citations_html = f'''
-            <div style="margin-top:42px; padding:24px; background:rgba(243,108,33,0.03); border-left:4px solid #F36C21; border-radius:0 16px 16px 0;">
-                <h3 style="margin:0 0 14px 0; font-size:16px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.05em;">
+            <div style="margin-top:36px; padding:20px; background:rgba(243,108,33,0.03); border-left:4px solid #F36C21; border-radius:0 14px 14px 0;">
+                <h3 style="margin:0 0 12px 0; font-size:15px; font-weight:800; color:#222; text-transform:uppercase; letter-spacing:0.05em;">
                     🔗 Related Documentation & Research Across the Web
                 </h3>
-                <ul style="list-style:none; padding:0; margin:0; line-height:1.75; font-size:14.5px;">
+                <ul style="list-style:none; padding:0; margin:0; line-height:1.75; font-size:14px;">
                     {"".join(citations)}
                 </ul>
             </div>
@@ -1734,9 +1832,9 @@ Respond in JSON format:
         logo_html = ""
         if logo_b64:
             logo_html = f'''
-            <div style="margin-top:48px; padding-top:24px; border-top:1px solid rgba(0,0,0,0.08); text-align:center;">
-                <img src="data:image/png;base64,{logo_b64}" alt="ReadContext" style="max-height:42px; margin:0 auto 10px; display:block; opacity:0.9;" />
-                <div style="font-size:12px; color:#999; letter-spacing:1px; text-transform:uppercase;">
+            <div style="margin-top:40px; padding-top:20px; border-top:1px solid rgba(0,0,0,0.08); text-align:center;">
+                <img src="data:image/png;base64,{logo_b64}" alt="ReadContext" style="max-height:38px; margin:0 auto 8px; display:block; opacity:0.9;" />
+                <div style="font-size:11.5px; color:#999; letter-spacing:1px; text-transform:uppercase;">
                     ReadContext Independent Newsroom · Fully Compliant Autonomous Journalism
                 </div>
             </div>
@@ -1787,7 +1885,7 @@ Respond in JSON format:
     </div>
 
     <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
-    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#666;">
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:20px; font-size:13px; color:#666;">
         <div>
             By <strong style="color:#222;">ReadContext Special Bureau</strong>
         </div>
@@ -1798,9 +1896,6 @@ Respond in JSON format:
 
     <!-- Hero Documentary Photo -->
     {hero_img_html}
-
-    <!-- Executive Takeaways -->
-    {takeaways_html}
 
     <!-- Article Narrative Body -->
     <div class="article-content">
@@ -1821,64 +1916,65 @@ Respond in JSON format:
 <!-- Responsive Newspaper Styling -->
 <style>
 .readcontext-article {{
-    line-height: 1.85;
-    color: #2a2a2a;
-    font-size: 17px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    color: #222222;
+    font-size: 16.5px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    word-wrap: break-word;
 }}
 .readcontext-article .article-content p {{
-    margin: 0 0 1.35em 0 !important;
-    text-indent: 2.4em !important; /* Clear tab space indentation on every paragraph */
-    line-height: 1.88 !important;
-    color: #2b2b2b;
+    margin: 0 0 14px 0 !important;
+    text-indent: 0 !important; /* Clean modern web typography with no awkward tab gaps */
+    line-height: 1.68 !important;
+    color: #2c2c2c;
 }}
 .readcontext-article .article-content h2 {{
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: 23px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif;
+    font-size: 21px;
     font-weight: 700;
-    color: #1a1a1a;
-    margin-top: 36px;
-    margin-bottom: 14px;
+    color: #111111;
+    margin-top: 26px;
+    margin-bottom: 10px;
     line-height: 1.35;
-    border-bottom: 2px solid rgba(243, 108, 33, 0.2);
+    border-bottom: 2px solid rgba(243, 108, 33, 0.25);
     padding-bottom: 6px;
 }}
 .readcontext-article .article-content h3 {{
-    font-size: 18px;
+    font-size: 17.5px;
     font-weight: 600;
-    color: #2c3e50;
-    margin-top: 26px;
-    margin-bottom: 12px;
-    padding-left: 14px;
-    margin-left: 1.5em; /* Tab indented subsection */
-    border-left: 3.5px solid #F36C21;
+    color: #222222;
+    margin-top: 20px;
+    margin-bottom: 8px;
+    padding-left: 10px;
+    border-left: 3px solid #F36C21;
 }}
 .readcontext-article .article-content blockquote {{
-    margin: 26px 0;
-    padding: 16px 22px;
+    margin: 20px 0;
+    padding: 14px 18px;
     background: #fdfaf6;
     border-left: 4px solid #F36C21;
     font-style: italic;
-    font-size: 17px;
+    font-size: 16px;
     color: #333;
-    border-radius: 0 12px 12px 0;
+    border-radius: 0 10px 10px 0;
+    line-height: 1.6;
 }}
 .readcontext-article .article-content blockquote cite {{
     display: block;
-    font-size: 13px;
+    font-size: 12.5px;
     font-style: normal;
     color: #777;
-    margin-top: 8px;
+    margin-top: 6px;
     font-weight: 500;
 }}
 .readcontext-article .article-content ul,
 .readcontext-article .article-content ol {{
-    margin: 16px 0 20px 24px;
+    margin: 14px 0 16px 20px;
     padding: 0;
-    line-height: 1.75;
+    line-height: 1.65;
 }}
 .readcontext-article .article-content li {{
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }}
 </style>
 
@@ -2140,8 +2236,8 @@ def main():
     log("📌", f"Source: {selected_topic['source']} | Virality Score: {selected_topic.get('virality_score', 0)}")
     log("🔗", f"Reference URL: {selected_topic.get('source_url')}")
 
-    # 4. Deep Research (Web scraping, Reddit discussions, HN Algolia, quotes)
-    dossier = researcher.deep_research(selected_topic)
+    # 4. Deep Research (Multi-source Web scraping, Reddit discussions, HN, Lemmy, and cross-web wires)
+    dossier = researcher.deep_research(selected_topic, candidate_pool=stories)
 
     # 5. Real Image Discovery & Vision Validation (Prioritizes primary source lead image)
     images = image_collector.fetch_verified_images(selected_topic, research_dossier=dossier)
