@@ -1,4 +1,4 @@
-# 📰 ReadContext — Autonomous AI Tech Journalism & Blogger Publisher
+#  ReadContext — Autonomous AI Tech Journalism & Blogger Publisher
 
 <p align="center">
   <img src="logo.png" alt="ReadContext Logo" width="180" style="border-radius: 12px;" />
@@ -30,68 +30,6 @@ Unlike basic RSS feed auto-posters that republish scraped snippets or generate c
 - **Multi-Source Primary Grounding**: Scrapes original article pages, extracts real quotes from industry leaders, and analyzes authentic Reddit and Hacker News discussion threads.
 - **Anti-Duplicate Guardian**: Hybrid fuzzy deduplication combines sequence matching, token Jaccard indices, canonical URL tracking, and live Blogger feed queries to prevent duplicate publications.
 - **Google AdSense Protection**: Strict content filtering guarantees zero graphic violence, zero unverified financial scams, zero click solicitations, and zero thin text.
-
----
-
-## 🏛️ System Architecture
-
-```mermaid
-flowchart TD
-    subgraph Sourcing ["1. Multi-Platform Harvester (12+ Channels)"]
-        TC[TechCrunch & The Verge]
-        HN[Hacker News & Algolia]
-        RD[Reddit r/technology & r/programming]
-        SD[Slashdot & Lemmy]
-        BS[Bluesky Tech Wire]
-        PH[Product Hunt & Ars Technica]
-    end
-
-    subgraph Dedup ["2. Multi-Layer Deduplication Engine"]
-        Fuzzy[Fuzzy Title Matching & Token Jaccard]
-        LiveCheck[Live Blogger Feed & Sitemaps]
-        BatchCheck[In-Batch Disambiguation]
-        HistCache[Historical Cache .blog-cache/]
-    end
-
-    subgraph Research ["3. Deep Web Researcher & Fact Extraction"]
-        Scraper[Direct Source Webpage Scraper]
-        LeadImg[og:image Press Visual Extraction]
-        RedditAPI[Reddit JSON API Discussion Miner]
-        HNSearch[HN Algolia Sentiment Analyzer]
-        GoogleNews[Cross-Web News Corroboration]
-    end
-
-    subgraph Intelligence ["4. NVIDIA NIM AI Editorial Suite"]
-        Archetype[Topic Archetype Classifier]
-        BespokeHeadings[Organic H2/H3 Structure Generator]
-        Synthesis[Original Long-Form Synthesis (1500-2200w)]
-        SEOEngine[Meta Title, Dek & Schema.org JSON-LD]
-    end
-
-    subgraph Visuals ["5. Documentary Image Curator"]
-        PressLead[Scraped Primary Press Photo]
-        WikiCommons[Wikimedia Commons Public Archive]
-        UnsplashAPI[Unsplash Editorial Search]
-        CategoryFallback[Contextual Categorized Fallback]
-    end
-
-    subgraph Publishing ["6. Automated Publishing & Indexing"]
-        BloggerAPI[Google Blogger API v3]
-        LocalArch[Git Markdown Archive _posts/]
-        GSC[Google Search Console Indexing API]
-        SitemapPing[Google Sitemap Auto-Ping]
-    end
-
-    Sourcing --> Dedup
-    Dedup -->|Top Safe Resonance Story| Research
-    Research --> Intelligence
-    Research --> Visuals
-    Intelligence --> Visuals
-    Intelligence --> Publishing
-    Visuals --> Publishing
-```
-
----
 
 ## 🚀 Key Features
 
