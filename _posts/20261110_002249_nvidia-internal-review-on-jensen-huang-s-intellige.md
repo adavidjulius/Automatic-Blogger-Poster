@@ -6,76 +6,11 @@ tags: ["Nvidia", "Jensen Huang", "US Intelligence", "Semiconductors", "Corporate
 word_count: 1310
 ---
 
-
-<!-- SEO Structured Data -->
-<script type="application/ld+json">
-{"@context": "https://schema.org", "@type": "NewsArticle", "headline": "Nvidia Internal Review on Jensen Huang's Intelligence Links", "description": "Examine the scope of Nvidia's internal review concerning Jensen Huang and US intelligence flags regarding potential data exposure.", "image": ["https://ichef.bbci.co.uk/ace/branded_news/1200/cpsprodpb/2521/live/6ba67640-dc03-11f1-b441-2b33b063138f.jpg"], "datePublished": "2026-11-10T00:22:49.910456+00:00", "dateModified": "2026-11-10T00:22:49.910456+00:00", "author": [{"@type": "Organization", "name": "ReadContext Special Bureau", "url": "https://readcontext.blogspot.com"}], "publisher": {"@type": "Organization", "name": "ReadContext", "logo": {"@type": "ImageObject", "url": "https://readcontext.blogspot.com/favicon.ico"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.bbc.co.uk/news/articles/ckgel338xql3o?at_medium=RSS&at_campaign=rss"}}
-</script>
-
-<style>
-.readcontext-article {
-    line-height: 1.85;
-    color: #2a2a2a;
-    font-size: 17px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
-.readcontext-article .article-content p {
-    margin: 0 0 1.35em 0 !important;
-    text-indent: 2.4em !important; /* Clear tab space indentation on every paragraph */
-    line-height: 1.88 !important;
-    color: #2b2b2b;
-}
-.readcontext-article .article-content h2 {
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: 23px;
-    font-weight: 700;
-    color: #1a1a1a;
-    margin-top: 36px;
-    margin-bottom: 14px;
-    line-height: 1.35;
-    border-bottom: 2px solid rgba(243, 108, 33, 0.2);
-    padding-bottom: 6px;
-}
-.readcontext-article .article-content h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #2c3e50;
-    margin-top: 26px;
-    margin-bottom: 12px;
-    padding-left: 14px;
-    margin-left: 1.5em; /* Tab indented subsection */
-    border-left: 3.5px solid #F36C21;
-}
-.readcontext-article .article-content blockquote {
-    margin: 26px 0;
-    padding: 16px 22px;
-    background: #fdfaf6;
-    border-left: 4px solid #F36C21;
-    font-style: italic;
-    font-size: 17px;
-    color: #333;
-    border-radius: 0 12px 12px 0;
-}
-.readcontext-article .article-content blockquote cite {
-    display: block;
-    font-size: 13px;
-    font-style: normal;
-    color: #777;
-    margin-top: 8px;
-    font-weight: 500;
-}
-.readcontext-article .article-content ul,
-.readcontext-article .article-content ol {
-    margin: 16px 0 20px 24px;
-    padding: 0;
-    line-height: 1.75;
-}
-.readcontext-article .article-content li {
-    margin-bottom: 8px;
-}
-</style>
-
 <div class="readcontext-article">
+    <!-- Editorial Dek (Clean summary placed at top for search engines and post card snippets) -->
+    <p class="readcontext-dek" style="font-size:1.22em; line-height:1.55; color:#444; font-style:italic; margin:0 0 16px 0; font-weight:500;">
+        Nvidia launched an independent inquiry into leadership associations flagged by US intelligence, examining data security risks.
+    </p>
 
     <!-- Editorial Kicker (Source name kept in backend only, never exposed at top) -->
     <div style="margin-bottom:12px;">
@@ -84,10 +19,6 @@ word_count: 1310
         </span>
     </div>
 
-    <!-- Editorial Dek (Subtitle) -->
-    <p style="font-size:1.22em; line-height:1.5; color:#555; font-style:italic; margin:0 0 18px 0; font-weight:500;">
-        Nvidia launched an independent inquiry into leadership associations flagged by US intelligence, examining data security risks.
-    </p>
 
     <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
     <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#666;">
@@ -238,3 +169,72 @@ word_count: 1310
             
 
 </div>
+
+<!-- Responsive Newspaper Styling -->
+<style>
+.readcontext-article {
+    line-height: 1.85;
+    color: #2a2a2a;
+    font-size: 17px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.readcontext-article .article-content p {
+    margin: 0 0 1.35em 0 !important;
+    text-indent: 2.4em !important; /* Clear tab space indentation on every paragraph */
+    line-height: 1.88 !important;
+    color: #2b2b2b;
+}
+.readcontext-article .article-content h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 23px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-top: 36px;
+    margin-bottom: 14px;
+    line-height: 1.35;
+    border-bottom: 2px solid rgba(243, 108, 33, 0.2);
+    padding-bottom: 6px;
+}
+.readcontext-article .article-content h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-top: 26px;
+    margin-bottom: 12px;
+    padding-left: 14px;
+    margin-left: 1.5em; /* Tab indented subsection */
+    border-left: 3.5px solid #F36C21;
+}
+.readcontext-article .article-content blockquote {
+    margin: 26px 0;
+    padding: 16px 22px;
+    background: #fdfaf6;
+    border-left: 4px solid #F36C21;
+    font-style: italic;
+    font-size: 17px;
+    color: #333;
+    border-radius: 0 12px 12px 0;
+}
+.readcontext-article .article-content blockquote cite {
+    display: block;
+    font-size: 13px;
+    font-style: normal;
+    color: #777;
+    margin-top: 8px;
+    font-weight: 500;
+}
+.readcontext-article .article-content ul,
+.readcontext-article .article-content ol {
+    margin: 16px 0 20px 24px;
+    padding: 0;
+    line-height: 1.75;
+}
+.readcontext-article .article-content li {
+    margin-bottom: 8px;
+}
+</style>
+
+<!-- SEO Structured Data (JSON-LD placed at end to prevent leaking into Blogger snippet cards) -->
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "NewsArticle", "headline": "Nvidia Internal Review on Jensen Huang's Intelligence Links", "description": "Examine the scope of Nvidia's internal review concerning Jensen Huang and US intelligence flags regarding potential data exposure.", "image": ["https://ichef.bbci.co.uk/ace/branded_news/1200/cpsprodpb/2521/live/6ba67640-dc03-11f1-b441-2b33b063138f.jpg"], "datePublished": "2026-11-10T00:22:49.910456+00:00", "dateModified": "2026-11-10T00:22:49.910456+00:00", "author": [{"@type": "Organization", "name": "ReadContext Special Bureau", "url": "https://readcontext.blogspot.com"}], "publisher": {"@type": "Organization", "name": "ReadContext", "logo": {"@type": "ImageObject", "url": "https://readcontext.blogspot.com/favicon.ico"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.bbc.co.uk/news/articles/ckgel338xql3o?at_medium=RSS&at_campaign=rss"}}
+</script>

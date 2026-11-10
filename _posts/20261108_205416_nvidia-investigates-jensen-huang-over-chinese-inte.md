@@ -6,103 +6,29 @@ tags: ["Nvidia", "Jensen Huang", "China Intelligence", "AI Tech", "Corporate Gov
 word_count: 1507
 ---
 
-
-<!-- SEO Structured Data -->
-<script type="application/ld+json">
-{"@context": "https://schema.org", "@type": "NewsArticle", "headline": "Nvidia Investigates Jensen Huang Over Chinese Intelligence Links", "description": "Nvidia is investigating CEO Jensen Huang amid reports of foreign intelligence targeting him. Explore the governance challenge in AI's global growth.", "image": ["https://platform.theverge.com/wp-content/uploads/sites/2/2026/07/STKP210_JENSEN_HUANG_A.jpg?quality=90&strip=all&crop=0%2C10.732984293194%2C100%2C78.534031413613&w=1200"], "datePublished": "2026-11-08T20:54:16.432580+00:00", "dateModified": "2026-11-08T20:54:16.432580+00:00", "author": [{"@type": "Organization", "name": "ReadContext Special Bureau", "url": "https://readcontext.blogspot.com"}], "publisher": {"@type": "Organization", "name": "ReadContext", "logo": {"@type": "ImageObject", "url": "https://readcontext.blogspot.com/favicon.ico"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.theverge.com/ai-artificial-intelligence/1029562/nvidia-investigating-jensen-huang-relationship-chinese-spy"}}
-</script>
-
-<style>
-.readcontext-article {
-    line-height: 1.85;
-    color: #2a2a2a;
-    font-size: 17px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
-.readcontext-article .article-content p {
-    margin: 0 0 1.25em 0;
-    text-indent: 1.5em; /* Clean typographic paragraph indentation */
-    line-height: 1.85;
-    color: #2b2b2b;
-}
-/* Lead paragraph and headings have zero indent for classic editorial flow */
-.readcontext-article .article-content > p:first-of-type,
-.readcontext-article .article-content h2 + p,
-.readcontext-article .article-content h3 + p,
-.readcontext-article .article-content blockquote + p {
-    text-indent: 0 !important;
-}
-.readcontext-article .article-content h2 {
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: 23px;
-    font-weight: 700;
-    color: #1a1a1a;
-    margin-top: 36px;
-    margin-bottom: 14px;
-    line-height: 1.35;
-    border-bottom: 2px solid rgba(243, 108, 33, 0.2);
-    padding-bottom: 6px;
-}
-.readcontext-article .article-content h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: #2c3e50;
-    margin-top: 24px;
-    margin-bottom: 10px;
-    padding-left: 12px;
-    border-left: 3px solid #F36C21;
-}
-.readcontext-article .article-content blockquote {
-    margin: 26px 0;
-    padding: 16px 22px;
-    background: #fdfaf6;
-    border-left: 4px solid #F36C21;
-    font-style: italic;
-    font-size: 17px;
-    color: #333;
-    border-radius: 0 12px 12px 0;
-}
-.readcontext-article .article-content blockquote cite {
-    display: block;
-    font-size: 13px;
-    font-style: normal;
-    color: #777;
-    margin-top: 8px;
-    font-weight: 500;
-}
-.readcontext-article .article-content ul,
-.readcontext-article .article-content ol {
-    margin: 16px 0 20px 24px;
-    padding: 0;
-    line-height: 1.75;
-}
-.readcontext-article .article-content li {
-    margin-bottom: 8px;
-}
-</style>
-
 <div class="readcontext-article">
-
-    <!-- Editorial Kicker & Subtitle -->
-    <div style="margin-bottom:12px;">
-        <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
-            CYBERSECURITY & INCIDENT FORENSICS · THE VERGE
-        </span>
-    </div>
-
-    <!-- Editorial Dek (Subtitle) -->
-    <p style="font-size:1.22em; line-height:1.5; color:#555; font-style:italic; margin:0 0 18px 0; font-weight:500;">
+    <!-- Editorial Dek (Clean summary placed at top for search engines and post card snippets) -->
+    <p class="readcontext-dek" style="font-size:1.22em; line-height:1.55; color:#444; font-style:italic; margin:0 0 16px 0; font-weight:500;">
         Nvidia's board launched an independent inquiry into CEO Jensen Huang following intelligence reports linking him to a Chinese state security operation.
     </p>
 
-    <!-- Byline & Metadata Bar -->
-    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#777;">
+    <!-- Editorial Dek (Clean summary placed at top for search engines and post card snippets) -->
+    
+
+    <!-- Editorial Kicker (Source name kept in backend only, never exposed at top) -->
+    <div style="margin-bottom:12px;">
+        <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
+            SPECIAL REPORT · CYBERSECURITY & INCIDENT FORENSICS
+        </span>
+    </div>
+
+    <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#666;">
         <div>
-            By <strong style="color:#222;">ReadContext Special Bureau</strong> · <span>November 08, 2026</span>
+            By <strong style="color:#222;">ReadContext Special Bureau</strong>
         </div>
-        <div style="display:flex; gap:14px; align-items:center;">
-            <span>⏱️ 7 min read</span>
-            <span>⚡ Resonance Score: 28</span>
+        <div>
+            📅 <span>Published on November 08, 2026 · 08:54 PM UTC</span>
         </div>
     </div>
 
@@ -216,3 +142,78 @@ word_count: 1507
             
 
 </div>
+
+<!-- Responsive Newspaper Styling -->
+<style>
+.readcontext-article {
+    line-height: 1.85;
+    color: #2a2a2a;
+    font-size: 17px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.readcontext-article .article-content p {
+    margin: 0 0 1.25em 0;
+    text-indent: 1.5em; /* Clean typographic paragraph indentation */
+    line-height: 1.85;
+    color: #2b2b2b;
+}
+/* Lead paragraph and headings have zero indent for classic editorial flow */
+.readcontext-article .article-content > p:first-of-type,
+.readcontext-article .article-content h2 + p,
+.readcontext-article .article-content h3 + p,
+.readcontext-article .article-content blockquote + p {
+    text-indent: 0 !important;
+}
+.readcontext-article .article-content h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 23px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-top: 36px;
+    margin-bottom: 14px;
+    line-height: 1.35;
+    border-bottom: 2px solid rgba(243, 108, 33, 0.2);
+    padding-bottom: 6px;
+}
+.readcontext-article .article-content h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-top: 24px;
+    margin-bottom: 10px;
+    padding-left: 12px;
+    border-left: 3px solid #F36C21;
+}
+.readcontext-article .article-content blockquote {
+    margin: 26px 0;
+    padding: 16px 22px;
+    background: #fdfaf6;
+    border-left: 4px solid #F36C21;
+    font-style: italic;
+    font-size: 17px;
+    color: #333;
+    border-radius: 0 12px 12px 0;
+}
+.readcontext-article .article-content blockquote cite {
+    display: block;
+    font-size: 13px;
+    font-style: normal;
+    color: #777;
+    margin-top: 8px;
+    font-weight: 500;
+}
+.readcontext-article .article-content ul,
+.readcontext-article .article-content ol {
+    margin: 16px 0 20px 24px;
+    padding: 0;
+    line-height: 1.75;
+}
+.readcontext-article .article-content li {
+    margin-bottom: 8px;
+}
+</style>
+
+<!-- SEO Structured Data (JSON-LD placed at end to prevent leaking into Blogger snippet cards) -->
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "NewsArticle", "headline": "Nvidia Investigates Jensen Huang Over Chinese Intelligence Links", "description": "Nvidia is investigating CEO Jensen Huang amid reports of foreign intelligence targeting him. Explore the governance challenge in AI's global growth.", "image": ["https://platform.theverge.com/wp-content/uploads/sites/2/2026/07/STKP210_JENSEN_HUANG_A.jpg?quality=90&strip=all&crop=0%2C10.732984293194%2C100%2C78.534031413613&w=1200"], "datePublished": "2026-11-08T20:54:16.432580+00:00", "dateModified": "2026-11-08T20:54:16.432580+00:00", "author": [{"@type": "Organization", "name": "ReadContext Special Bureau", "url": "https://readcontext.blogspot.com"}], "publisher": {"@type": "Organization", "name": "ReadContext", "logo": {"@type": "ImageObject", "url": "https://readcontext.blogspot.com/favicon.ico"}}, "mainEntityOfPage": {"@type": "WebPage", "@id": "https://www.theverge.com/ai-artificial-intelligence/1029562/nvidia-investigating-jensen-huang-relationship-chinese-spy"}}
+</script>

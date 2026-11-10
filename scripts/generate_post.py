@@ -11,7 +11,7 @@
    • ZERO Copyright Infringement: Original journalistic synthesis & attribution;
      no pirated downloads or copied text blocks.
    • ZERO Misinformation: No unscientific medical advice, get-rich-quick, or scams.
-   • NO Thin Content: Exhaustive, high-depth coverage (1,500–2,500 words).
+   • Mobile-Optimized Substance: Fast-paced, authoritative reporting (800–1,050 words, under 5 min read for mobile audience).
    • NO Deceptive Ad Placement: Clean, ethical presentation matching site aesthetics.
    • Essential Pages: Auto-generates Privacy Policy, About Us, and Contact Pages.
 ══════════════════════════════════════════════════════════════════════════════
@@ -212,7 +212,7 @@ class ContentComplianceGuard:
     3. Copyright Theft: No pirated links, cracked software, keygens, torrents, warez, or paywall bypasses.
     4. Misinformation: No unscientific medical advice, fake news, conspiracy theories, or quick-wealth financial schemes.
     5. Advertising & Click Solicitations: No "support us by clicking", no fake download buttons, no deceptive button styling.
-    6. Thin Text Prevention: Minimum 1,000 words enforced on every published dispatch.
+    6. Thin Text Prevention: Minimum 650 words enforced on every published dispatch to ensure solid substance while keeping reads strictly under 5 minutes for mobile users.
     """
 
     GRAPHIC_VIOLENCE = [
@@ -239,7 +239,7 @@ class ContentComplianceGuard:
 
     ALL_PATTERNS = GRAPHIC_VIOLENCE + GEOPOLITICAL_CONFLICT + COPYRIGHT_PIRACY + MISINFORMATION_SCAMS + CLICK_SOLICITATIONS
 
-    MIN_COMPLIANT_WORDS = 1000
+    MIN_COMPLIANT_WORDS = 650
 
     @classmethod
     def normalize_text(cls, text):
@@ -1275,10 +1275,10 @@ class RealImageCollector:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class ArticleGenerator:
-    """Generates unique, topic-adaptive, long-form journalism formatted for readcontext.blogspot.com."""
+    """Generates unique, topic-adaptive, mobile-optimized journalism formatted for readcontext.blogspot.com."""
 
-    MIN_TARGET_WORDS = 1400
-    MAX_TARGET_WORDS = 2400
+    MIN_TARGET_WORDS = 800
+    MAX_TARGET_WORDS = 1050
 
     # Archetype styles to ensure distinct narrative structures
     ARCHETYPES = {
@@ -1351,19 +1351,19 @@ MULTI-SOURCE RESEARCH DOSSIER (Scraped facts, Reddit discussions, HN signals, Re
 
 CRITICAL EDITORIAL RULES:
 1. Do NOT use generic canned headings like "The Genesis of the Shift", "Technical Architecture & Core Mechanics", "Industry Winners and Losers", or "The Road Ahead".
-2. Instead, craft 5-6 bespoke, natural H2 section headings that mention the actual names, products, technologies, or controversies from this story.
-3. Formulate 4 concrete Key Takeaways (factual and punchy).
+2. Instead, craft 3-4 bespoke, natural H2 section headings tailored for a fast 4-minute mobile read, mentioning the actual names, products, technologies, or controversies from this story.
+3. Formulate 3 concrete Key Takeaways (factual, punchy, and concise).
 4. Provide a 1-sentence journalistic Dek (subtitle).
 
 Output the outline clearly with the custom H2 headings and Key Takeaways.
 """}
         ]
-        outline = self.ai.generate(outline_prompt, max_tokens=1500, temperature=0.6, timeout=35.0)
+        outline = self.ai.generate(outline_prompt, max_tokens=1200, temperature=0.6, timeout=35.0)
         if not outline:
             log("❌", "Outline generation failed.")
             return None
 
-        # ── Step 2: Write Full Long-Form Article with Original Synthesis ──
+        # ── Step 2: Write Full Mobile-Optimized Article with Original Synthesis ──
         article_prompt = [
             {"role": "system", "content": (
                 "You are an investigative technology correspondent for ReadContext (readcontext.blogspot.com). "
@@ -1380,14 +1380,14 @@ Output the outline clearly with the custom H2 headings and Key Takeaways.
                 "  - Do NOT write 'Only time will tell' or 'A double-edged sword'\n"
                 "• ADAPTIVE VOCABULARY: Match the natural language of the subject. A coffee gadget or consumer phone should be discussed in terms of user experience, build quality, and real-world testing. A security breach should focus on attack vectors and remediation. An AI launch should focus on computational capabilities.\n"
                 "• AUTHENTIC CITATIONS: Use the provided research quotes and community discussions from Reddit and Hacker News. Attribute them accurately.\n"
-                "• SUBSTANCE DEPTH: Comprehensive, authoritative reporting (1,500–2,200 words).\n"
-                "• PARAGRAPH INDENTATION & STRUCTURE: Every single narrative paragraph MUST be wrapped in <p> tags. Never leave naked text lines or unformatted sentences. Keep each paragraph at 3 to 5 sentences so the typographic tab indentation is clearly visible.\n"
+                "• SUBSTANCE & MOBILE READABILITY: Fast-paced, punchy, authoritative reporting (strictly 800–1,050 words, designed for under a 5-minute read time for mobile readers).\n"
+                "• PARAGRAPH INDENTATION & STRUCTURE: Every single narrative paragraph MUST be wrapped in <p> tags. Never leave naked text lines or unformatted sentences. Keep each paragraph at 3 to 4 sentences so the typographic tab indentation is clearly visible.\n"
                 "• SUB-HEADINGS HIERARCHY: Structure sections with <h2> and indented subsections with <h3>. Always close tags with matching end tags (e.g. <h3>...</h3>).\n"
                 "• SEMANTIC HTML OUTPUT: Output ONLY semantic HTML content. Do NOT wrap in <html>, <body>, <head>, or <h1>.\n"
                 "• Begin immediately with a professional journalistic dateline inside a paragraph: <p><strong>SAN FRANCISCO —</strong> ...</p>"
             )},
             {"role": "user", "content": f"""
-Write an exhaustive, high-impact 1500–2200 word investigative article adhering strictly to this outline:
+Write a crisp, high-impact 800–1,050 word investigative article (under 5-minute read time) adhering strictly to this outline:
 
 BESPOKE OUTLINE:
 {outline}
@@ -1402,14 +1402,14 @@ Genre: {archetype['name']}
 
 STRUCTURE INSTRUCTIONS:
 1. Lead Dateline Hook: Start with a strong bold dateline explaining what happened, why it matters today, and the primary tension.
-2. Follow the 5-6 bespoke H2 headings generated in the outline. Under each H2, include 2-4 analytical, highly detailed paragraphs.
-3. Integrate 2-3 blockquotes with authentic source citations (referencing the actual reporting wire or community thread).
+2. Follow the 3-4 bespoke H2 headings generated in the outline. Under each H2, include 2 focused, analytical, information-dense paragraphs.
+3. Integrate 1-2 blockquotes with authentic source citations (referencing the actual reporting wire or community thread).
 4. Include an informative comparison or bulleted breakdown (`<ul><li>...</li></ul>`) detailing specifications, key milestones, or architectural trade-offs.
 5. End with an analytical conclusion section focusing on upcoming milestones, unresolved questions, and the strategic road ahead.
 """}
         ]
 
-        article_html = self.ai.generate(article_prompt, max_tokens=3900, temperature=0.7, timeout=60.0)
+        article_html = self.ai.generate(article_prompt, max_tokens=2500, temperature=0.7, timeout=50.0)
         if not article_html:
             log("❌", "Article body generation failed.")
             return None
@@ -1418,27 +1418,28 @@ STRUCTURE INSTRUCTIONS:
         cleaned_body = self._sanitize_html(article_html)
         word_count = len(clean_text(cleaned_body).split())
 
-        # ── Step 2b: Enforce In-Depth Coverage (Minimum 1,200 Words) ────────
-        if word_count < 1200:
-            log("⚠️", f"Draft reached {word_count} words (below depth standard). Deepening analysis...")
+        # ── Step 2b: Enforce Mobile Read Depth (Target: 800–1,050 Words, Under 5 Mins) ──
+        if word_count < 700:
+            log("⚠️", f"Draft reached {word_count} words (below mobile depth standard). Deepening analysis...")
             expand_prompt = [
                 {"role": "system", "content": (
                     "You are the Senior Executive Editor of ReadContext. "
-                    "Deepen the provided draft by adding 2-3 substantive, highly specific analytical paragraphs under the existing sections. "
-                    "Incorporate technical nuances, user feedback, economic realities, and historical context. "
+                    "Deepen the provided draft by adding 1-2 focused analytical paragraphs under existing sections. "
+                    "Keep total article length strictly between 800 and 1,050 words so mobile reading time stays under 5 minutes. "
+                    "Incorporate technical nuances, user feedback, and real-world context. "
                     "DO NOT repeat generic phrases like 'developer reactions' or 'economic trade-off'. "
                     "Output ONLY clean semantic HTML matching existing section headings."
                 )},
-                {"role": "user", "content": f"Expand this draft with comprehensive depth and context to exceed 1,500 words:\n\n{cleaned_body}"}
+                {"role": "user", "content": f"Deepen this draft to reach between 800 and 1,050 words (under 5 min read):\n\n{cleaned_body}"}
             ]
-            expanded = self.ai.generate(expand_prompt, max_tokens=3800, temperature=0.6, timeout=50.0)
+            expanded = self.ai.generate(expand_prompt, max_tokens=2500, temperature=0.6, timeout=45.0)
             if expanded:
                 cand_body = self._sanitize_html(expanded)
                 cand_words = len(clean_text(cand_body).split())
                 if cand_words > word_count:
                     cleaned_body = cand_body
                     word_count = cand_words
-                    log("✅", f"Article expanded to authoritative depth: {word_count} words")
+                    log("✅", f"Article expanded to mobile-optimized depth: {word_count} words")
 
         # ── Step 3: Extract Key Takeaways & SEO Metadata ───────────────────
         meta = self._generate_seo(topic, cleaned_body)
@@ -1769,12 +1770,55 @@ Respond in JSON format:
             }
         })
 
-        html = f'''
-<!-- SEO Structured Data -->
-<script type="application/ld+json">
-{schema_json}
-</script>
+        dek_text = meta.get('dek', topic.get('description', '')).strip()
 
+        html = f'''<div class="readcontext-article">
+
+    <!-- Editorial Dek (Clean summary placed at top for search engines and post card snippets) -->
+    <p class="readcontext-dek" style="font-size:1.22em; line-height:1.55; color:#444; font-style:italic; margin:0 0 16px 0; font-weight:500;">
+        {dek_text}
+    </p>
+
+    <!-- Editorial Kicker (Source name kept in backend only, never exposed at top) -->
+    <div style="margin-bottom:12px;">
+        <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
+            SPECIAL REPORT · {archetype['name'].upper()}
+        </span>
+    </div>
+
+    <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
+    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#666;">
+        <div>
+            By <strong style="color:#222;">ReadContext Special Bureau</strong>
+        </div>
+        <div>
+            📅 <span>Published on {now.strftime("%B %d, %Y · %I:%M %p UTC")}</span>
+        </div>
+    </div>
+
+    <!-- Hero Documentary Photo -->
+    {hero_img_html}
+
+    <!-- Executive Takeaways -->
+    {takeaways_html}
+
+    <!-- Article Narrative Body -->
+    <div class="article-content">
+        {article_body}
+    </div>
+
+    <!-- Secondary Visual -->
+    {secondary_img_html}
+
+    <!-- Related Documentation & Research on the Internet (No Repeating Brands) -->
+    {citations_html}
+
+    <!-- Branded Signature -->
+    {logo_html}
+
+</div>
+
+<!-- Responsive Newspaper Styling -->
 <style>
 .readcontext-article {{
     line-height: 1.85;
@@ -1838,51 +1882,10 @@ Respond in JSON format:
 }}
 </style>
 
-<div class="readcontext-article">
-
-    <!-- Editorial Kicker (Source name kept in backend only, never exposed at top) -->
-    <div style="margin-bottom:12px;">
-        <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
-            SPECIAL REPORT · {archetype['name'].upper()}
-        </span>
-    </div>
-
-    <!-- Editorial Dek (Subtitle) -->
-    <p style="font-size:1.22em; line-height:1.5; color:#555; font-style:italic; margin:0 0 18px 0; font-weight:500;">
-        {meta.get('dek', topic.get('description', ''))}
-    </p>
-
-    <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
-    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:12px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:24px; font-size:13px; color:#666;">
-        <div>
-            By <strong style="color:#222;">ReadContext Special Bureau</strong>
-        </div>
-        <div>
-            📅 <span>Published on {now.strftime("%B %d, %Y · %I:%M %p UTC")}</span>
-        </div>
-    </div>
-
-    <!-- Hero Documentary Photo -->
-    {hero_img_html}
-
-    <!-- Executive Takeaways -->
-    {takeaways_html}
-
-    <!-- Article Narrative Body -->
-    <div class="article-content">
-        {article_body}
-    </div>
-
-    <!-- Secondary Visual -->
-    {secondary_img_html}
-
-    <!-- Related Documentation & Research on the Internet (No Repeating Brands) -->
-    {citations_html}
-
-    <!-- Branded Signature -->
-    {logo_html}
-
-</div>
+<!-- SEO Structured Data (JSON-LD placed at end to prevent leaking into Blogger snippet cards) -->
+<script type="application/ld+json">
+{schema_json}
+</script>
 '''
         return html
 

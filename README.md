@@ -22,7 +22,7 @@
 
 ## 🌟 Overview
 
-**ReadContext** is an enterprise-grade automated digital newsroom system. Operating on scheduled GitHub Actions runners at zero hosting cost, it autonomously tracks emerging technology stories across 12+ public feeds, performs deep investigative web research, gathers authentic user sentiment from Reddit and Hacker News, synthesizes original long-form articles (1,400–2,400 words), matches verified press imagery, and publishes directly to Google Blogger while pinging Google Search Console for near-instant search indexing.
+**ReadContext** is an enterprise-grade automated digital newsroom system. Operating on scheduled GitHub Actions runners at zero hosting cost, it autonomously tracks emerging technology stories across 12+ public feeds, performs deep investigative web research, gathers authentic user sentiment from Reddit and Hacker News, synthesizes original, mobile-optimized dispatches (800–1,050 words; under 5 min read), matches verified press imagery, and publishes directly to Google Blogger while pinging Google Search Console for near-instant search indexing.
 
 Unlike basic RSS feed auto-posters that republish scraped snippets or generate cookie-cutter text, ReadContext functions as a complete digital editorial team:
 - **Zero Plagiarism & Original Synthesis**: Rewrites raw facts and benchmarks into original investigative journalism.
@@ -101,7 +101,7 @@ Every article passes automated safety checks prior to publication:
 - **Zero Geopolitical Bias**: Strict journalistic neutrality with no partisan war commentary or taking sides.
 - **Zero Copyright Infringement**: Facts are synthesized into unique analytical prose; no copy-pasting of source paragraphs.
 - **Zero Deceptive Placements & Click Solicitations**: Strictly bans "support us by clicking", fake download buttons, or misleading ad layouts.
-- **No Thin Content**: Enforces a strict minimum of **1,400 to 2,400 words** with automatic editorial expansion if initial generation falls short.
+- **Mobile-Optimized Substance (Under 5 Min Read)**: Targets **800 to 1,050 words** (~4-minute average reading speed) with a safety minimum of 650 words, keeping mobile readers engaged and boosting page completion rates for monetization.
 
 ### 2. 🧠 Topic-Adaptive AI Architecture (Ending the Cookie-Cutter Template)
 ReadContext automatically identifies the story archetype and adapts its tone, vocabulary, and heading structure:
