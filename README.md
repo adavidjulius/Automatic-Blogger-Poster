@@ -1,12 +1,12 @@
-#  ReadContext — Autonomous AI Tech Journalism & Blogger Publisher
+# 📰 ReadContext — Multi-Beat Digital Newsroom & Blogger Publisher
 
 <p align="center">
   <img src="logo.png" alt="ReadContext Logo" width="180" style="border-radius: 12px;" />
 </p>
 
 <p align="center">
-  <strong>An autonomous, multi-platform investigative tech journalism engine engineered for <a href="https://readcontext.blogspot.com">readcontext.blogspot.com</a>.</strong><br>
-  Powered by NVIDIA NIM microservices, real-time web scraping, authentic community discourse (Reddit, Hacker News, Google News), multi-layer deduplication, and strict Google AdSense / Publisher Policy safeguards.
+  <strong>An automated, multi-beat editorial newsroom publishing system engineered for <a href="https://readcontext.blogspot.com">readcontext.blogspot.com</a>.</strong><br>
+  Covering Tamil Nadu regional governance, India national affairs, global diplomacy, space & scientific discoveries, market economics, and applied technology with strict AdSense safety safeguards, Wikipedia entity mapping, and anti-fatigue subject cooldowns.
 </p>
 
 <p align="center">
@@ -22,12 +22,15 @@
 
 ## 🌟 Overview
 
-**ReadContext** is an enterprise-grade automated digital newsroom system. Operating on scheduled GitHub Actions runners at zero hosting cost, it autonomously tracks emerging technology stories across 12+ public feeds, performs deep investigative web research, gathers authentic user sentiment from Reddit and Hacker News, synthesizes original, mobile-optimized dispatches (800–1,050 words; under 5 min read), matches verified press imagery, and publishes directly to Google Blogger while pinging Google Search Console for near-instant search indexing.
+**ReadContext** is a comprehensive multi-beat digital newsroom publishing system. Operating on scheduled GitHub Actions runners, it tracks stories across diverse desks (Tamil Nadu Regional, India National, Global Affairs, Science & Discovery, Markets & Economy, Applied Technology), performs deep investigative web research, applies Wikipedia entity mapping, balances coverage to prevent repetitive subject fatigue, and publishes mobile-optimized dispatches (800–1,050 words; under 5 min read) directly to Google Blogger.
 
-Unlike basic RSS feed auto-posters that republish scraped snippets or generate cookie-cutter text, ReadContext functions as a complete digital editorial team:
-- **Zero Plagiarism & Original Synthesis**: Rewrites raw facts and benchmarks into original investigative journalism.
-- **Topic-Adaptive Journalism**: Dynamically determines the narrative archetype (Hardware Review, AI Research, Cybersecurity Incident, Corporate Strategy) and generates bespoke, contextual section headings.
-- **Multi-Source Primary Grounding**: Scrapes original article pages, extracts real quotes from industry leaders, and analyzes authentic Reddit and Hacker News discussion threads.
+Unlike basic RSS feed auto-posters that republish scraped snippets or generate repetitive text, ReadContext functions as a complete digital newsroom:
+- **Diverse Multi-Desk Coverage**: Rotates across Tamil Nadu regional governance, Indian national policy, world affairs, space/science breakthroughs, business markets, and technology.
+- **Subject Fatigue & Person Cooldown**: Automatically prevents publishing about the same public figure or corporation across editions, enforcing 24–48 hour cooldown periods.
+- **Wikipedia Encyclopedic Linking**: Maps and links key public figures, institutions, and organizations to canonical Wikipedia articles on their first mention.
+- **Zero AI Disclosure / Clean Human Editorial Voice**: Zero robotic jargon, zero AI buzzwords, and fully human-styled editorial prose and rubrics.
+- **Selective Visual Hierarchy**: Prominent top hero documentary photo for all articles, with contextual secondary images placed inside the text body only for high-priority dispatches.
+- **Strict AdSense Non-Violence Standards**: Blocks graphic conflict, war casualties, and sensationalism to preserve monetization health.
 - **Anti-Duplicate Guardian**: Hybrid fuzzy deduplication combines sequence matching, token Jaccard indices, canonical URL tracking, and live Blogger feed queries to prevent duplicate publications.
 - **Google AdSense Protection**: Strict content filtering guarantees zero graphic violence, zero unverified financial scams, zero click solicitations, and zero thin text.
 

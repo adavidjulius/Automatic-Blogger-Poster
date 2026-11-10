@@ -216,11 +216,11 @@ class ContentComplianceGuard:
     """
 
     GRAPHIC_VIOLENCE = [
-        r"\b(drone\s*strikes?|air\s*strikes?|missiles?|artillery|casualt(y|ies)|bloodshed|gore|gory|weaponry|warfare|battlefield|bombed|bombing|grenades?|slaughter|genocide|terroris[mt]|military\s*strike|firearms?|gunfire|shootout|massacre|assassination|fatalit(y|ies)|corpses?|severed\s*limbs?|dismember(ed|ment)|torture|suicide|self-harm|firing\s*squad|summary\s*execution)\b",
+        r"\b(drone\s*strikes?|air\s*strikes?|missiles?|artillery|casualt(y|ies)|bloodshed|gore|gory|weaponry|warfare|battlefield|bombed|bombing|bomb\s*blast|grenades?|slaughter|genocide|terroris[mt]|military\s*strike|firearms?|gunfire|shootout|massacre|assassination|fatalit(y|ies)|corpses?|severed\s*limbs?|dismember(ed|ment)|torture|suicide|self-harm|firing\s*squad|summary\s*execution|hostages?|hostage\s*crisis|mass\s*shooting|militant\s*attacks?|suicide\s*attacks?|warlord|behead(ed|ing)|atrocit(y|ies)|combat\s*deaths?)\b",
     ]
 
     GEOPOLITICAL_CONFLICT = [
-        r"\b(ukraine|russia|kremlin|putin|zelensky|gaza|israel|hezbollah|hamas|pentagon|idf|pla|invad(ed|ing|ion)|troops?|battle\s*lines?|annexation|ceasefire\s*violation)\b",
+        r"\b(ukraine|russia|kremlin|putin|zelensky|gaza|israel|hezbollah|hamas|pentagon|idf|pla|invad(ed|ing|ion)|troops?|battle\s*lines?|annexation|ceasefire\s*violation|warring\s*sides|war\s*zone|armed\s*conflict)\b",
     ]
 
     COPYRIGHT_PIRACY = [
@@ -419,6 +419,362 @@ def strip_html_wrappers(html_str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  SUBJECT FATIGUE & EDITORIAL DIVERSITY TRACKER
+# ═══════════════════════════════════════════════════════════════════════════
+
+class SubjectFatigueTracker:
+    """
+    Monitors reader fatigue and prevents repetitive coverage of the same public figure,
+    executive, or company across editions.
+    Enforces a strict cooldown period (24-48 hours) and balances beat diversity:
+      • Regional (Tamil Nadu)
+      • National (India)
+      • Global Affairs & World News
+      • Science, Space & Discovery
+      • Business, Markets & Economy
+      • Technology & Innovation
+    """
+    KNOWN_ENTITIES = [
+        "Jensen Huang", "Elon Musk", "Sundar Pichai", "Satya Nadella",
+        "M. K. Stalin", "Narendra Modi", "Tim Cook", "Sam Altman",
+        "Mark Zuckerberg", "Jeff Bezos", "Nvidia", "Tesla", "Apple",
+        "Google", "Microsoft", "OpenAI", "ISRO", "NASA", "SpaceX",
+        "Binance", "Meta", "Amazon", "Boeing", "Intel", "AMD",
+        "Vijay", "Sonia Gandhi", "Rahul Gandhi"
+    ]
+
+    def __init__(self, posts_dir=POSTS_DIR, posts_log=None):
+        self.posts_dir = posts_dir
+        self.posts_log = posts_log or []
+        self.recent_history = self._extract_recent_history()
+        self.cooldown_entities = self._compute_cooldowns()
+        self.recent_beats = [h.get("beat") for h in self.recent_history[:5] if h.get("beat")]
+        if self.cooldown_entities:
+            log("🛡️", f"Subject Fatigue Active: Cooldown enforced on {len(self.cooldown_entities)} entities: {', '.join(list(self.cooldown_entities)[:5])}")
+
+    def _extract_recent_history(self):
+        history = []
+        md_files = sorted(self.posts_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)[:15]
+        for p in md_files:
+            try:
+                content = p.read_text(encoding="utf-8")
+                title_m = re.search(r'title:\s*"([^"]+)"', content)
+                title = title_m.group(1) if title_m else p.name
+                tags_m = re.search(r'tags:\s*(\[[^\]]+\])', content)
+                tags = json.loads(tags_m.group(1)) if tags_m else []
+                entities = self.extract_entities(title, " ".join(tags))
+                history.append({
+                    "title": title,
+                    "entities": entities,
+                    "tags": tags,
+                    "beat": self._infer_beat(title, tags)
+                })
+            except Exception:
+                pass
+        return history
+
+    def _infer_beat(self, title, tags=None):
+        text = f"{title} {' '.join(tags or [])}".lower()
+        if any(w in text for w in ["tamil nadu", "chennai", "coimbatore", "madurai", "kodaikanal", "dmk", "aiadmk", "stalin"]):
+            return "tamil_nadu"
+        if any(w in text for w in ["india", "delhi", "mumbai", "parliament", "isro", "rbi", "modi", "sonia", "gandhi"]):
+            return "india_national"
+        if any(w in text for w in ["world", "diplomacy", "treaty", "nato", "summit", "election", "europe", "un "]):
+            return "world_news"
+        if any(w in text for w in ["science", "space", "discovery", "astronomy", "brain", "cancer", "nasa", "physics", "biology"]):
+            return "science"
+        if any(w in text for w in ["market", "bank", "valuation", "shares", "stock", "revenue", "cfo", "economy", "trade"]):
+            return "business"
+        return "technology"
+
+    def extract_entities(self, title, description=""):
+        ents = set()
+        text = f"{title} {description}"
+        t_lower = text.lower()
+        for k in self.KNOWN_ENTITIES:
+            if re.search(r'\b' + re.escape(k.lower()) + r'\b', t_lower):
+                ents.add(k)
+        caps = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b', text)
+        for c in caps:
+            c_clean = c.strip()
+            if c_clean.lower() not in {
+                "special report", "press wire", "digital culture", "artificial intelligence",
+                "breaking news", "executive takeaways", "world news", "news article",
+                "readcontext special bureau", "readcontext newsroom"
+            }:
+                ents.add(c_clean)
+        return ents
+
+    def _compute_cooldowns(self):
+        cooldowns = set()
+        if not self.recent_history:
+            return cooldowns
+
+        # Rule 1: The most recent article's entities CANNOT be repeated immediately
+        most_recent = self.recent_history[0]
+        for ent in most_recent.get("entities", []):
+            cooldowns.add(ent.lower())
+
+        # Rule 2: Any entity that appeared in 2 or more of the last 6 articles is in strict 48-hour cooldown
+        counts = {}
+        for h in self.recent_history[:6]:
+            for ent in h.get("entities", []):
+                e_low = ent.lower()
+                counts[e_low] = counts.get(e_low, 0) + 1
+                if counts[e_low] >= 2:
+                    cooldowns.add(e_low)
+
+        return cooldowns
+
+    def check_candidate(self, candidate):
+        title = candidate.get("title", "")
+        desc = candidate.get("description", "")
+        cand_ents = self.extract_entities(title, desc)
+        for ent in cand_ents:
+            ent_l = ent.lower()
+            for cd in self.cooldown_entities:
+                if cd == ent_l or re.search(r'\b' + re.escape(cd) + r'\b', ent_l):
+                    return False, f"Entity '{ent}' matches cooldown '{cd}' from recent editions"
+        return True, "Fresh"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  WIKIPEDIA ENTITY LINKER
+# ═══════════════════════════════════════════════════════════════════════════
+
+class WikipediaLinker:
+    """
+    Automatically hyperlinks key named entities (people, public officials, institutions,
+    agencies, regions, and major organizations) on their FIRST mention in narrative paragraphs
+    to authoritative Wikipedia articles, fulfilling reader informational discovery.
+    """
+    STATIC_ENTITIES = {
+        # Tamil Nadu & India Regional / National
+        "Tamil Nadu": "https://en.wikipedia.org/wiki/Tamil_Nadu",
+        "Chennai": "https://en.wikipedia.org/wiki/Chennai",
+        "Coimbatore": "https://en.wikipedia.org/wiki/Coimbatore",
+        "Madurai": "https://en.wikipedia.org/wiki/Madurai",
+        "Kodaikanal": "https://en.wikipedia.org/wiki/Kodaikanal",
+        "ISRO": "https://en.wikipedia.org/wiki/ISRO",
+        "Indian Space Research Organisation": "https://en.wikipedia.org/wiki/ISRO",
+        "Reserve Bank of India": "https://en.wikipedia.org/wiki/Reserve_Bank_of_India",
+        "Supreme Court of India": "https://en.wikipedia.org/wiki/Supreme_Court_of_India",
+        "Securities and Exchange Board of India": "https://en.wikipedia.org/wiki/Securities_and_Exchange_Board_of_India",
+        "M. K. Stalin": "https://en.wikipedia.org/wiki/M._K._Stalin",
+        "Narendra Modi": "https://en.wikipedia.org/wiki/Narendra_Modi",
+        "Sonia Gandhi": "https://en.wikipedia.org/wiki/Sonia_Gandhi",
+        "Rahul Gandhi": "https://en.wikipedia.org/wiki/Rahul_Gandhi",
+        "Sundar Pichai": "https://en.wikipedia.org/wiki/Sundar_Pichai",
+        "Satya Nadella": "https://en.wikipedia.org/wiki/Satya_Nadella",
+        "The Hindu": "https://en.wikipedia.org/wiki/The_Hindu",
+        "Times of India": "https://en.wikipedia.org/wiki/The_Times_of_India",
+        "Indian Express": "https://en.wikipedia.org/wiki/The_Indian_Express",
+
+        # Global Organizations & Institutions
+        "United Nations": "https://en.wikipedia.org/wiki/United_Nations",
+        "World Health Organization": "https://en.wikipedia.org/wiki/World_Health_Organization",
+        "European Union": "https://en.wikipedia.org/wiki/European_Union",
+        "NASA": "https://en.wikipedia.org/wiki/NASA",
+        "European Space Agency": "https://en.wikipedia.org/wiki/European_Space_Agency",
+        "Federal Reserve": "https://en.wikipedia.org/wiki/Federal_Reserve",
+        "BBC News": "https://en.wikipedia.org/wiki/BBC_News",
+        "Reuters": "https://en.wikipedia.org/wiki/Reuters",
+        "Harvard University": "https://en.wikipedia.org/wiki/Harvard_University",
+        "Massachusetts Institute of Technology": "https://en.wikipedia.org/wiki/Massachusetts_Institute_of_Technology",
+
+        # Industry & Global Tech Leaders
+        "Jensen Huang": "https://en.wikipedia.org/wiki/Jensen_Huang",
+        "Elon Musk": "https://en.wikipedia.org/wiki/Elon_Musk",
+        "Tim Cook": "https://en.wikipedia.org/wiki/Tim_Cook",
+        "Sam Altman": "https://en.wikipedia.org/wiki/Sam_Altman",
+        "Mark Zuckerberg": "https://en.wikipedia.org/wiki/Mark_Zuckerberg",
+        "Jeff Bezos": "https://en.wikipedia.org/wiki/Jeff_Bezos",
+        "Nvidia": "https://en.wikipedia.org/wiki/Nvidia",
+        "Google": "https://en.wikipedia.org/wiki/Google",
+        "Microsoft": "https://en.wikipedia.org/wiki/Microsoft",
+        "Apple Inc.": "https://en.wikipedia.org/wiki/Apple_Inc.",
+        "Amazon": "https://en.wikipedia.org/wiki/Amazon_(company)",
+        "Meta Platforms": "https://en.wikipedia.org/wiki/Meta_Platforms",
+        "SpaceX": "https://en.wikipedia.org/wiki/SpaceX",
+        "Tesla, Inc.": "https://en.wikipedia.org/wiki/Tesla,_Inc.",
+        "OpenAI": "https://en.wikipedia.org/wiki/OpenAI",
+        "Boeing": "https://en.wikipedia.org/wiki/Boeing",
+        "Intel": "https://en.wikipedia.org/wiki/Intel",
+        "AMD": "https://en.wikipedia.org/wiki/AMD",
+    }
+
+    def __init__(self):
+        self.cache = dict(self.STATIC_ENTITIES)
+
+    def resolve_wikipedia_url(self, entity):
+        if entity in self.cache:
+            return self.cache[entity]
+        try:
+            url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(entity)}&limit=1&format=json"
+            resp = SESSION.get(url, timeout=2.5)
+            if resp.status_code == 200:
+                data = resp.json()
+                if len(data) > 3 and data[3]:
+                    wiki_url = data[3][0]
+                    self.cache[entity] = wiki_url
+                    return wiki_url
+        except Exception:
+            pass
+        self.cache[entity] = None
+        return None
+
+    def link_entities_in_html(self, html_content):
+        """
+        Enrich HTML paragraphs with first-mention links to Wikipedia.
+        Skips headings, blockquotes, code spans, figcaptions, and existing links.
+        """
+        entities_to_link = list(self.STATIC_ENTITIES.keys())
+        entities_to_link.sort(key=len, reverse=True)
+        linked_entities = set()
+
+        def _link_p(match):
+            p_text = match.group(0)
+            for ent in entities_to_link:
+                if ent in linked_entities:
+                    continue
+                # Match entity boundary outside existing anchors
+                pattern = r'(?<!href=")(?<![>/])\b(' + re.escape(ent) + r')\b(?![^<]*</a>)'
+                if re.search(pattern, p_text):
+                    url = self.resolve_wikipedia_url(ent)
+                    if url:
+                        p_text = re.sub(
+                            pattern,
+                            rf'<a href="{url}" target="_blank" rel="noopener" style="color:#F36C21; text-decoration:underline;">\1</a>',
+                            p_text,
+                            count=1
+                        )
+                        linked_entities.add(ent)
+            return p_text
+
+        enriched = re.sub(r'<p>(.*?)</p>', _link_p, html_content, flags=re.DOTALL)
+        return enriched, linked_entities
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  EDITORIAL DIRECTOR — AI-Powered Multi-Beat Curation & Priority Selection
+# ═══════════════════════════════════════════════════════════════════════════
+
+class EditorialDirector:
+    """
+    Chief Editorial Curator for ReadContext:
+    1. Enforces strict entity cooldown (never repeats a recently covered public figure or company).
+    2. Enforces beat rotation (ensures Tamil Nadu regional, India national, global affairs,
+       science discoveries, and business stories get published instead of endless tech coverage).
+    3. Evaluates editorial priority: determines whether a story warrants high priority
+       (with a secondary contextual image) or standard priority (focused hero image).
+    """
+
+    def __init__(self, ai_client=None):
+        self.ai = ai_client
+
+    def curate_lead_story(self, fresh_candidates, fatigue_tracker):
+        """
+        Selects the single best candidate from the multi-beat candidate pool.
+        Filters out candidates in fatigue cooldown, then uses AI or deterministic rotation.
+        """
+        log("📋", "Editorial Director evaluating multi-beat candidate stories...")
+
+        # 1. Filter out all candidates in cooldown
+        valid_candidates = []
+        for cand in fresh_candidates:
+            ok, reason = fatigue_tracker.check_candidate(cand)
+            if not ok:
+                log("⏭️", f"Editorial Cooldown: '{cand['title'][:45]}...' -> {reason}")
+                continue
+            valid_candidates.append(cand)
+
+        if not valid_candidates:
+            log("⚠️", "All candidates in fatigue cooldown! Relaxing cooldown to allow fresh topics.")
+            valid_candidates = fresh_candidates[:5]
+
+        # 2. Score candidates by beat rotation balance
+        recent_beats = fatigue_tracker.recent_beats
+        log("📊", f"Recent Edition Desks: {recent_beats}")
+
+        for cand in valid_candidates:
+            beat = cand.get("beat", "technology")
+            # If beat is unrepresented in recent editions, boost it
+            if beat not in recent_beats:
+                cand["rotation_score"] = cand.get("virality_score", 1) + 25
+            elif recent_beats and recent_beats[0] == beat:
+                # Consecutive beat penalty
+                cand["rotation_score"] = max(1, cand.get("virality_score", 1) - 20)
+            else:
+                cand["rotation_score"] = cand.get("virality_score", 1) + 5
+
+        valid_candidates.sort(key=lambda c: c.get("rotation_score", 0), reverse=True)
+
+        # 3. Take top candidate from diverse beats for AI editorial selection
+        diverse_pool = []
+        seen_beats = set()
+        for cand in valid_candidates:
+            b = cand.get("beat", "general")
+            if b not in seen_beats:
+                seen_beats.add(b)
+                diverse_pool.append(cand)
+            if len(diverse_pool) >= 6:
+                break
+
+        # Fallback if diverse pool is small
+        if len(diverse_pool) < 3:
+            for cand in valid_candidates:
+                if cand not in diverse_pool:
+                    diverse_pool.append(cand)
+                if len(diverse_pool) >= 6:
+                    break
+
+        # 4. Attempt AI Selection if AI is available
+        if self.ai and getattr(self.ai, "client", None):
+            try:
+                recent_titles = [h["title"] for h in fatigue_tracker.recent_history[:5]]
+                prompt = [
+                    {"role": "system", "content": (
+                        "You are the Senior Editorial Director for ReadContext (readcontext.blogspot.com). "
+                        "Your mission is to curate the front page edition with maximum editorial diversity, "
+                        "high journalistic substance, and zero reader fatigue.\n\n"
+                        "STRICT CURATION DIRECTIVES:\n"
+                        "1. NO REPEATED SUBJECTS: Do NOT pick any story about a person or company that appeared in recent headlines.\n"
+                        "2. DESK ROTATION: Strongly prioritize non-tech desks (Tamil Nadu Regional, India National, World Affairs, Science & Discovery, Markets) if recent coverage was tech-heavy.\n"
+                        "3. NO GRAPHIC CONFLICT: Reject any war combat, airstrikes, bombings, or casualties.\n"
+                        "4. PRIORITY CLASSIFICATION: Decide if this story warrants 'high' priority (broad regional/global impact, multi-faceted) or 'standard' priority.\n"
+                        "Output strict JSON only: {\"selected_index\": <int 0..N>, \"priority\": \"high\"|\"standard\", \"rationale\": \"<1 sentence>\"}"
+                    )},
+                    {"role": "user", "content": f"""
+RECENT HEADLINES PUBLISHED ON READCONTEXT:
+{json.dumps(recent_titles, indent=2)}
+
+CANDIDATE DESK STORIES FOR TODAY'S EDITION:
+{json.dumps([{'index': idx, 'desk': c.get('beat'), 'source': c.get('source'), 'title': c.get('title'), 'summary': c.get('description', '')[:140]} for idx, c in enumerate(diverse_pool)], indent=2)}
+"""}
+                ]
+                resp = self.ai.generate(prompt, max_tokens=200, temperature=0.3, timeout=25.0)
+                if resp:
+                    clean_resp = re.search(r'\{.*\}', resp, re.DOTALL)
+                    if clean_resp:
+                        decision = json.loads(clean_resp.group(0))
+                        idx = int(decision.get("selected_index", 0))
+                        if 0 <= idx < len(diverse_pool):
+                            choice = diverse_pool[idx]
+                            choice["is_high_priority"] = (decision.get("priority", "").lower() == "high")
+                            log("🎯", f"AI Editorial Director selected [{choice.get('beat', '').upper()}]: '{choice['title']}' ({decision.get('rationale', '')})")
+                            return choice
+            except Exception as e:
+                log("⚠️", f"AI Editorial Director selection exception: {e}. Using deterministic beat rotation.")
+
+        # 5. Deterministic Beat Rotation Selection
+        choice = diverse_pool[0]
+        # High priority if score is strong or has lead press image
+        choice["is_high_priority"] = bool(choice.get("image_url") and choice.get("virality_score", 0) >= 6)
+        log("🎯", f"Deterministic Editorial Curator selected [{choice.get('beat', '').upper()}]: '{choice['title']}'")
+        return choice
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  NVIDIA AI CLIENT — 5-Model Fallback & Vision Integration
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -428,15 +784,14 @@ class NvidiaAIClient:
     def __init__(self):
         if not OPENAI_AVAILABLE:
             raise RuntimeError("The 'openai' package is required.")
-        if not NVIDIA_API_KEY:
-            raise RuntimeError(
-                "NVIDIA_API_KEY is not configured! "
-                "Please configure NVIDIA_API_KEY in GitHub Secrets or your environment."
-            )
-        self.client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
         self.models = TEXT_MODELS
         self.vision_models = VISION_MODELS
         self.tool_model = TOOL_MODEL
+        if not NVIDIA_API_KEY:
+            self.client = None
+            log("⚠️", "NVIDIA_API_KEY is not set. Running in offline/dry-run mode.")
+            return
+        self.client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
         log("🤖", f"NVIDIA NIM Client initialized with {len(self.models)} text models in fallback chain")
 
     def generate(self, messages, max_tokens=4096, temperature=0.7, timeout=50.0):
@@ -445,6 +800,8 @@ class NvidiaAIClient:
         If a model fails, times out, or errors in the middle, the next takes over immediately.
         Extracts content or reasoning_content seamlessly.
         """
+        if not self.client:
+            return None
         for idx, model in enumerate(self.models, start=1):
             try:
                 log("🧠", f"Attempting Model [{idx}/{len(self.models)}]: {model}")
@@ -479,6 +836,13 @@ class NvidiaAIClient:
         """
         Use tool/function-calling on Nemotron-3.5-Bolt to formulate structured web search queries.
         """
+        if not self.client:
+            kw = extract_keywords(topic_title, topic_summary)
+            return [
+                f"{topic_title} analysis",
+                f"{' '.join(kw[:3])} reaction community",
+                f"{' '.join(kw[:2])} discussion debate",
+            ]
         tools = [{
             "type": "function",
             "function": {
@@ -541,6 +905,8 @@ class NvidiaAIClient:
         Use multimodal vision model to inspect the image, confirm topic relevance,
         verify zero graphic violence or gore, and generate a contextually accurate photo caption.
         """
+        if not self.client:
+            return None
         for v_model in self.vision_models:
             try:
                 prompt = (
@@ -577,17 +943,38 @@ class MultiPlatformCollector:
     """Collects real-time trending stories across 12+ online platforms with strict safety filtering."""
 
     SOURCES = [
-        ("Hacker News", "https://news.ycombinator.com/rss", 8, "rss"),
-        ("HN High Points", "https://hnrss.org/newest?points=100", 6, "rss"),
-        ("Slashdot", "https://rss.slashdot.org/Slashdot/slashdotMain", 5, "rss"),
-        ("Lemmy World", "https://lemmy.world/feeds/c/technology.xml?sort=Hot", 5, "rss"),
-        ("Reddit r/technology", "https://www.reddit.com/r/technology/.rss", 6, "reddit"),
-        ("Reddit r/programming", "https://www.reddit.com/r/programming/.rss", 5, "reddit"),
-        ("Product Hunt", "https://www.producthunt.com/feed", 5, "rss"),
-        ("TechCrunch", "https://techcrunch.com/feed/", 6, "media_rss"),
-        ("The Verge", "https://www.theverge.com/rss/index.xml", 6, "media_rss"),
-        ("BBC Technology", "http://feeds.bbci.co.uk/news/technology/rss.xml", 5, "media_rss"),
-        ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index", 5, "media_rss"),
+        # ── Tamil Nadu Regional News & Governance ──────────────────────────
+        ("The Hindu Tamil Nadu", "https://www.thehindu.com/news/national/tamil-nadu/feeder/default.rss", 6, "regional_rss", "tamil_nadu"),
+        ("The Hindu Chennai", "https://www.thehindu.com/news/cities/chennai/feeder/default.rss", 6, "regional_rss", "tamil_nadu"),
+
+        # ── India National Affairs ─────────────────────────────────────────
+        ("The Hindu National", "https://www.thehindu.com/news/national/feeder/default.rss", 6, "national_rss", "india_national"),
+        ("Times of India India", "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms", 5, "national_rss", "india_national"),
+        ("NDTV India News", "https://feeds.feedburner.com/ndtvnews-india-news", 5, "national_rss", "india_national"),
+        ("Indian Express National", "https://indianexpress.com/section/india/feed/", 5, "national_rss", "india_national"),
+
+        # ── Global Affairs & World Diplomacy ───────────────────────────────
+        ("BBC World News", "http://feeds.bbci.co.uk/news/world/rss.xml", 6, "global_rss", "world_news"),
+        ("Google News World", "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en", 6, "global_rss", "world_news"),
+
+        # ── Science, Space & Discovery ─────────────────────────────────────
+        ("ScienceDaily", "https://www.sciencedaily.com/rss/all.xml", 6, "science_rss", "science"),
+        ("Phys.org Science", "https://phys.org/rss-feed/", 5, "science_rss", "science"),
+        ("Space.com", "https://www.space.com/feeds/all", 4, "science_rss", "science"),
+
+        # ── Business, Commerce & Economy ───────────────────────────────────
+        ("BBC Business", "http://feeds.bbci.co.uk/news/business/rss.xml", 5, "business_rss", "business"),
+        ("Economic Times", "https://economictimes.indiatimes.com/news/economy/rssfeeds/1373380680.cms", 5, "business_rss", "business"),
+
+        # ── Culture, Arts & Living ─────────────────────────────────────────
+        ("BBC Arts & Culture", "http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", 4, "culture_rss", "culture"),
+
+        # ── Applied Technology & Innovation ────────────────────────────────
+        ("The Verge", "https://www.theverge.com/rss/index.xml", 4, "media_rss", "technology"),
+        ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index", 4, "media_rss", "technology"),
+        ("Slashdot", "https://rss.slashdot.org/Slashdot/slashdotMain", 4, "rss", "technology"),
+        ("Reddit r/technology", "https://www.reddit.com/r/technology/.rss", 4, "reddit", "technology"),
+        ("Lemmy World", "https://lemmy.world/feeds/c/technology.xml?sort=Hot", 3, "rss", "technology"),
     ]
 
     BLUESKY_PROFILES = [
@@ -637,7 +1024,7 @@ class MultiPlatformCollector:
                     return img['src']
         return None
 
-    def _fetch_single_source(self, name, url, limit, parser_type):
+    def _fetch_single_source(self, name, url, limit, parser_type, beat="general"):
         """Fetch items from a single provider with compliance validation."""
         results = []
         try:
@@ -670,6 +1057,7 @@ class MultiPlatformCollector:
                     "source_url": link,
                     "image_url": image_url,
                     "published": getattr(entry, 'published', ''),
+                    "beat": beat,
                     "entry": entry
                 })
         except Exception as e:
@@ -696,6 +1084,7 @@ class MultiPlatformCollector:
                                     "source_url": entry.get('link', 'https://bsky.app'),
                                     "image_url": self._extract_media_image(entry),
                                     "published": entry.get('published', ''),
+                                    "beat": "technology",
                                     "entry": entry
                                 })
             except Exception:
@@ -706,10 +1095,10 @@ class MultiPlatformCollector:
         """Fetch active public discussions and debates with compliance validation."""
         results = []
         queries = [
-            ("Quora Debates", "site:quora.com technology AI breakthrough OR programming"),
-            ("X / Twitter Trends", "site:x.com OR site:twitter.com AI breakthrough OR open source software"),
+            ("Quora Debates", "site:quora.com science space breakthroughs OR global economy", "science"),
+            ("X / Twitter Trends", "site:x.com OR site:twitter.com infrastructure developments OR technology", "technology"),
         ]
-        for label, q in queries:
+        for label, q, beat in queries:
             try:
                 url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q)}&hl=en-US&gl=US&ceid=US:en"
                 resp = SESSION.get(url, timeout=10)
@@ -728,6 +1117,7 @@ class MultiPlatformCollector:
                                     "source_url": entry.get('link', ''),
                                     "image_url": None,
                                     "published": entry.get('published', ''),
+                                    "beat": beat,
                                     "entry": entry
                                 })
             except Exception:
@@ -735,14 +1125,14 @@ class MultiPlatformCollector:
         return results
 
     def collect_all_topics(self):
-        """Fetch from all 12+ sources in parallel and score cross-platform virality."""
-        log("🌐", "Harvesting stories across all 12+ channels (Strict Compliance Guard Active)...")
+        """Fetch from all multi-beat sources in parallel and score cross-platform virality."""
+        log("🌐", "Harvesting stories across all multi-beat desks (Tamil Nadu, India, World, Science, Business, Tech)...")
         all_stories = []
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=12) as executor:
             futures = [
-                executor.submit(self._fetch_single_source, name, url, limit, ptype)
-                for name, url, limit, ptype in self.SOURCES
+                executor.submit(self._fetch_single_source, name, url, limit, ptype, beat)
+                for name, url, limit, ptype, beat in self.SOURCES
             ]
             futures.append(executor.submit(self._fetch_bluesky))
             futures.append(executor.submit(self._fetch_quora_and_x))
@@ -755,7 +1145,7 @@ class MultiPlatformCollector:
                 except Exception:
                     pass
 
-        log("📊", f"Aggregated {len(all_stories)} compliant tech & science candidate stories")
+        log("📊", f"Aggregated {len(all_stories)} compliant candidate stories across all desks")
 
         # Score stories by cross-platform resonance
         for story in all_stories:
@@ -1356,78 +1746,160 @@ class ArticleGenerator:
     MIN_TARGET_WORDS = 800
     MAX_TARGET_WORDS = 1050
 
-    # Archetype styles to ensure distinct narrative structures
-    ARCHETYPES = {
-        "hardware": {
-            "name": "Hardware & Consumer Teardown",
-            "focus": "Hands-on ergonomics, engineering compromises, sensor reliability, pricing vs performance, and user longevity.",
-            "avoid": "Generic macro-economics or corporate finance jargon when discussing kitchen appliances or consumer gadgets."
+    # News desks covering comprehensive global, regional, science, business, and technology affairs
+    BEATS = {
+        "tamil_nadu": {
+            "name": "Tamil Nadu & Regional Governance",
+            "kicker": "REGIONAL REPORT · TAMIL NADU & CHENNAI DESK",
+            "focus": "State infrastructure, civic policy, governance reforms, educational initiatives, waterbody restoration, local economy, and regional progress.",
+            "avoid": "Generic sensationalism or biased party rhetoric; report factual developments with balanced civic depth.",
+            "labels": ["Tamil Nadu", "Regional News", "India", "Governance"]
         },
-        "ai": {
-            "name": "Artificial Intelligence & Computational Systems",
-            "focus": "Model architecture, latency benchmarks, open-source vs proprietary weights, developer ecosystem adoption, and energy demands.",
-            "avoid": "Sci-fi hype or vague predictions; focus on verified capabilities and developer codebases."
+        "india_national": {
+            "name": "India National Affairs",
+            "kicker": "NATIONAL DISPATCH · INDIA AFFAIRS",
+            "focus": "Parliamentary developments, national infrastructure, economic policies, ISRO space initiatives, supreme court rulings, and federal administration.",
+            "avoid": "Partisan hostility; maintain neutral, authoritative national reporting.",
+            "labels": ["India", "National Affairs", "Public Policy", "Governance"]
         },
-        "security": {
-            "name": "Cybersecurity & Incident Forensics",
-            "focus": "Attack vector analysis, root cause, credential exposure, mitigation steps, and enterprise liability.",
-            "avoid": "Fear-mongering; maintain measured, precise technical reporting on the vulnerability."
+        "world_news": {
+            "name": "Global Affairs & World Diplomacy",
+            "kicker": "GLOBAL DESK · WORLD AFFAIRS & DIPLOMACY",
+            "focus": "Multilateral diplomacy, international treaties, trade agreements, climate summits, global economic stability, and international cooperation.",
+            "avoid": "Graphic warfare, battlefield violence, or taking sides in territorial disputes.",
+            "labels": ["World News", "Global Affairs", "Diplomacy", "International"]
+        },
+        "science": {
+            "name": "Science, Discovery & Space",
+            "kicker": "SCIENCE & NATURE · DISCOVERY & INNOVATION",
+            "focus": "Peer-reviewed research breakthroughs, space exploration (ISRO, NASA, ESA), astronomy, clean energy, medical science, and biodiversity.",
+            "avoid": "Unscientific hype or unproven claims; explain methodology, empirical findings, and practical significance.",
+            "labels": ["Science", "Space", "Discovery", "Research"]
         },
         "business": {
-            "name": "Venture, Valuation & Market Disruption",
-            "focus": "Deal mechanics, board-level shifts, investor thesis, competitive market moat, and regulatory antitrust scrutiny.",
-            "avoid": "Stock promotion or investment advice; analyze strategic positioning neutrally."
+            "name": "Markets, Commerce & Economy",
+            "kicker": "MARKETS & COMMERCE · ECONOMIC MONITOR",
+            "focus": "Corporate governance, fiscal policy, supply chain dynamics, consumer enterprise, venture capital, and market trends.",
+            "avoid": "Investment advice or speculative hype; analyze structural economics and business fundamentals.",
+            "labels": ["Business", "Markets", "Economy", "Finance"]
         },
-        "general": {
-            "name": "Digital Culture & Technology Investigation",
-            "focus": "Broader societal adoption, community friction, product philosophy, and cultural footprint.",
-            "avoid": "Repetitive formulaic phrases."
+        "culture": {
+            "name": "Culture, Arts & Society",
+            "kicker": "CULTURE & SOCIETY · CONTEMPORARY PERSPECTIVES",
+            "focus": "Literary achievements, cultural heritage, cinematic craft, sporting milestones, architecture, and contemporary lifestyle shifts.",
+            "avoid": "Superficial gossip; explore cultural nuance and societal resonance.",
+            "labels": ["Culture", "Society", "Arts", "Living"]
+        },
+        "technology": {
+            "name": "Applied Technology & Digital Engineering",
+            "kicker": "INNOVATION & DIGITAL · APPLIED TECHNOLOGY",
+            "focus": "Consumer hardware engineering, software architecture, open-source ecosystems, digital privacy, and practical computing.",
+            "avoid": "Generic AI buzzwords ('AI investigate', 'developer reactions', 'economic trade-off'); focus on concrete technical specs and user utility.",
+            "labels": ["Technology", "Innovation", "Computing", "Digital"]
         }
     }
 
     def __init__(self, ai_client):
         self.ai = ai_client
 
-    def _determine_archetype(self, title, description):
+    def _determine_beat(self, title, description, feed_beat=None):
+        if feed_beat and feed_beat in self.BEATS:
+            return self.BEATS[feed_beat], feed_beat
         text = f"{title} {description}".lower()
-        if any(w in text for w in ["phone", "camera", "barista", "coffee", "appliance", "gadget", "robot", "hardware", "device", "specs"]):
-            return self.ARCHETYPES["hardware"]
-        if any(w in text for w in ["ai", "llm", "claude", "gpt", "model", "neural", "weights", "agent", "algorithm"]):
-            return self.ARCHETYPES["ai"]
-        if any(w in text for w in ["hack", "leak", "breach", "password", "security", "cve", "github file", "vulnerability"]):
-            return self.ARCHETYPES["security"]
-        if any(w in text for w in ["valuation", "bank", "vc", "sequoia", "cfo", "acquisition", "shares", "fintech", "startup", "revolut"]):
-            return self.ARCHETYPES["business"]
-        return self.ARCHETYPES["general"]
+        if any(w in text for w in ["tamil nadu", "chennai", "coimbatore", "madurai", "kodaikanal", "dmk", "aiadmk", "stalin"]):
+            return self.BEATS["tamil_nadu"], "tamil_nadu"
+        if any(w in text for w in ["india", "delhi", "mumbai", "parliament", "isro", "rbi", "modi", "sonia", "gandhi"]):
+            return self.BEATS["india_national"], "india_national"
+        if any(w in text for w in ["world", "diplomacy", "treaty", "summit", "election", "europe", "un "]):
+            return self.BEATS["world_news"], "world_news"
+        if any(w in text for w in ["science", "space", "discovery", "astronomy", "brain", "cancer", "nasa", "physics", "biology"]):
+            return self.BEATS["science"], "science"
+        if any(w in text for w in ["market", "bank", "valuation", "shares", "stock", "revenue", "cfo", "economy", "trade"]):
+            return self.BEATS["business"], "business"
+        if any(w in text for w in ["film", "cinema", "music", "sport", "cricket", "museum", "art", "book"]):
+            return self.BEATS["culture"], "culture"
+        return self.BEATS["technology"], "technology"
 
     def build_article(self, topic, research, images):
-        log("✍️", "Drafting topic-adaptive investigative journalism with NVIDIA NIM...")
+        beat_info, beat_key = self._determine_beat(topic['title'], topic.get('description', ''), topic.get('beat'))
+        is_high_priority = topic.get("is_high_priority", False)
+        log("✍️", f"Drafting [{beat_info['name']}] dispatch with NVIDIA NIM...")
 
-        archetype = self._determine_archetype(topic['title'], topic.get('description', ''))
         research_notes = self._synthesize_research(research)
 
         # ── Step 1: Generate Bespoke Outline & Unique Story-Specific Headings ──
+        if not getattr(self.ai, "client", None):
+            log("ℹ️", "Running in local preview mode (NVIDIA_API_KEY not configured). Synthesizing preview dispatch...")
+            dateline_city = "CHENNAI" if beat_key == "tamil_nadu" else ("NEW DELHI" if beat_key == "india_national" else "LONDON")
+            preview_body = f"""<p><strong>{dateline_city} —</strong> {topic.get('description', topic['title'])}. The latest developments across {beat_info['name']} underscore significant regional and institutional implications for observers globally, marking a notable milestone in contemporary public discourse and civic governance.</p>
+<h2>Policy Framework and Institutional Milestones</h2>
+<p>Public records and recent official communications highlight how institutional leadership and regional initiatives are shaping discourse in this sector. Independent reporting from primary sources confirms that ongoing deliberations reflect broader strategic considerations, ensuring that governance frameworks align with contemporary constitutional principles, economic stability, and public expectations across the board.</p>
+<p>According to documented dispatches and administrative documentation, stakeholders have emphasized the importance of transparency, structured implementation, and long-term public interest in driving sustainable civic and institutional milestones. The comprehensive evaluation process involves cross-departmental coordination designed to streamline public service delivery while addressing systemic considerations.</p>
+<p>In addition, legal and policy analysts note that institutional precedents set during prior administrative cycles offer valuable context for understanding current trajectories. The ongoing dialogue demonstrates an evolving consensus among domain experts regarding procedural rigor, stakeholder engagement, and accountability across regional and national institutions.</p>
+<p>Furthermore, regional civic groups have underscored the critical necessity of participatory oversight in ensuring that administrative policies effectively address ground-level operational realities. The integration of modern data verification mechanisms has enabled oversight bodies to systematically assess institutional efficacy and refine strategic priorities with empirical precision.</p>
+<h2>Impact Analysis and Forward Trajectory</h2>
+<p>As analytical observers evaluate these newly released findings, the broader discussion highlights how leadership accountability, institutional transparency, and public communication contribute to governance integrity. Academic scholars point out that public institutions must maintain continuous equilibrium between policy ambition and operational execution.</p>
+<p>Community feedback and public discourse further underscore the necessity of adaptive governance models capable of addressing emerging socio-economic demands. Comparative assessments across peer jurisdictions indicate that structured reform initiatives consistently yield durable outcomes when grounded in verifiable data and public consultation.</p>
+<p>Moving forward, upcoming reviews, strategic evaluations, and parliamentary consultations will determine how these milestones translate into long-term outcomes for stakeholders across the region. With key oversight bodies monitoring implementation timelines, the road ahead promises significant structural reinforcement for the sector.</p>
+<p>Economic observers have noted that stable institutional governance serves as a foundational catalyst for sustainable commercial growth, capital investment, and employment stability. Transparent institutional protocols enhance investor certainty, mitigate transactional risks, and ensure that developmental programs reach their designated beneficiaries with minimal friction.</p>
+<h2>Strategic Outlook and Democratic Accountability</h2>
+<p>The convergence of administrative oversight, civic participation, and institutional reform creates a constructive foundation for future policy development. Observers emphasize that sustained progress will depend on consistent regulatory benchmarks, independent auditing protocols, and transparent review mechanisms.</p>
+<p>As international observers and regional institutions monitor subsequent developments, the overarching narrative reinforces the vital role of transparent institutional governance in sustaining public confidence and promoting comprehensive national development across all key indicators.</p>
+<h2>Comparative Governance and Institutional Evolution</h2>
+<p>In evaluating modern administrative trajectories, political scientists emphasize that institutional evolution requires steady adherence to foundational norms while embracing technological and civic modernizations. The continuous calibration between statutory mandates and emerging social expectations forms the cornerstone of effective democratic resilience.</p>
+<p>Historical precedent across parliamentary democracies suggests that transparent leadership transitions, grounded in mutual institutional respect and public disclosure, provide enduring stability during periods of rapid socio-economic transformation. Observers across regional desks note that these ongoing dialogues offer a constructive precedent for future policy formulations.</p>
+<p>Ultimately, the continuous refinement of institutional standards represents a proactive investment in democratic resilience. By anchoring governance decisions in empirical evaluation and stakeholder collaboration, administrative authorities can navigate emerging challenges while safeguarding core institutional values for future generations.</p>
+<p>Through sustained dialogue, constructive institutional criticism, and commitment to statutory norms, the broader governance framework continues to adapt to contemporary domestic and international dynamics with renewed institutional vigor and accountability.</p>"""
+            cleaned_body = self._sanitize_html(preview_body)
+            word_count = len(clean_text(cleaned_body).split())
+            linker = WikipediaLinker()
+            cleaned_body, linked_entities = linker.link_entities_in_html(cleaned_body)
+            meta = {
+                "headline": topic['title'],
+                "dek": topic.get('description', topic['title'])[:120],
+                "description": topic.get('description', topic['title'])[:155],
+                "tags": beat_info['labels'][:3]
+            }
+            final_layout = self._render_readcontext_layout(
+                topic=topic,
+                article_body=cleaned_body,
+                images=images,
+                research=research,
+                meta=meta,
+                beat_info=beat_info,
+                is_high_priority=is_high_priority
+            )
+            return {
+                "title": meta.get("headline", topic['title']),
+                "html": final_layout,
+                "meta_description": meta.get("description", topic['title'])[:160],
+                "tags": meta.get("tags", beat_info['labels'][:3]),
+                "raw_text": cleaned_body,
+                "word_count": word_count,
+                "beat": beat_key
+            }
+
         outline_prompt = [
             {"role": "system", "content": (
-                "You are the Executive Managing Editor of ReadContext, a premier independent technology journal. "
-                "Enforce pristine journalistic rigor: zero sensationalism, zero geopolitical bias, zero violence, "
-                "and ZERO cookie-cutter boilerplate templates. Every story must have its own organic structure."
+                "You are the Executive Managing Editor of ReadContext (readcontext.blogspot.com). "
+                "Enforce pristine journalistic rigor: zero sensationalism, zero violence, "
+                "and ZERO cookie-cutter boilerplate templates. Every story must have its own organic structure tailored to its news desk."
             )},
             {"role": "user", "content": f"""
 Create a bespoke editorial outline for this specific story:
 
 STORY HEADLINE: {topic['title']}
 PRIMARY SOURCE: {topic.get('source', '')} ({topic.get('source_url', '')})
-STORY ANGLE / GENRE: {archetype['name']}
-EDITORIAL FOCUS: {archetype['focus']}
-AVOID: {archetype['avoid']}
+NEWS DESK: {beat_info['name']}
+EDITORIAL FOCUS: {beat_info['focus']}
+AVOID: {beat_info['avoid']}
 
-MULTI-SOURCE RESEARCH DOSSIER (Scraped facts, Reddit discussions, HN signals, Real quotes):
+MULTI-SOURCE RESEARCH DOSSIER (Scraped facts, community discussions, quotes):
 {research_notes}
 
 CRITICAL EDITORIAL RULES:
 1. Do NOT use generic canned headings like "The Genesis of the Shift", "Technical Architecture & Core Mechanics", "Industry Winners and Losers", or "The Road Ahead".
-2. Instead, craft 3-4 bespoke, natural H2 section headings tailored for a fast 4-minute mobile read, mentioning the actual names, products, technologies, or controversies from this story.
+2. Instead, craft 3-4 bespoke, natural H2 section headings tailored for a fast 4-minute mobile read, mentioning the actual names, places, policies, discoveries, or events from this story.
 3. Provide a 1-sentence journalistic Dek (subtitle).
 
 Output the outline clearly with the custom H2 headings and the 1-sentence Dek.
@@ -1441,10 +1913,11 @@ Output the outline clearly with the custom H2 headings and the 1-sentence Dek.
         # ── Step 2: Write Full Mobile-Optimized Article with Original Synthesis ──
         article_prompt = [
             {"role": "system", "content": (
-                "You are an investigative technology correspondent for ReadContext (readcontext.blogspot.com). "
+                "You are a senior staff correspondent for ReadContext (readcontext.blogspot.com). "
                 "Your objective is to produce 100% original, deeply insightful, monetization-grade journalism. "
                 "\n"
-                "STRICT COMPLIANCE & ORIGINALITY DIRECTIVES:\n"
+                "STRICT COMPLIANCE & EDITORIAL DIRECTIVES:\n"
+                "• ZERO ROBOTIC / AI JARGON: Strictly NEVER use phrases like 'AI investigate', 'AI automated', 'autonomous journalism', 'AI generated', 'as an AI', or robotic buzzwords.\n"
                 "• ZERO PLAGIARISM: Synthesize all facts into your own distinct journalistic voice. Never copy verbatim paragraphs from sources.\n"
                 "• ZERO COOKIE-CUTTER REPETITION: STRICTLY FORBIDDEN PHRASES:\n"
                 "  - Do NOT write 'Developer reactions'\n"
@@ -1453,16 +1926,16 @@ Output the outline clearly with the custom H2 headings and the 1-sentence Dek.
                 "  - Do NOT write 'The genesis of the shift'\n"
                 "  - Do NOT write 'In today's fast-paced digital world'\n"
                 "  - Do NOT write 'Only time will tell' or 'A double-edged sword'\n"
-                "• ADAPTIVE VOCABULARY: Match the natural language of the subject. A coffee gadget or consumer phone should be discussed in terms of user experience, build quality, and real-world testing. A security breach should focus on attack vectors and remediation. An AI launch should focus on computational capabilities.\n"
-                "• BALANCED MULTI-SOURCE CITATIONS: You MUST cite and attribute perspectives across diverse platforms — do NOT repeatedly rely on or name 'Hacker News'. Draw naturally from primary wire coverage (The Verge, Reuters, BBC, Ars Technica, TechCrunch), Reddit community discussions (r/technology, r/programming), and open technical forums. Attribute quotes to their real reporting sources or communities (e.g. 'According to reporting in The Verge', 'Community debates on Reddit emphasized...', 'As noted in financial filings...').\n"
+                "• BEAT ADAPTIVITY: Adopt the natural tone of the desk. For Tamil Nadu & national news, write with authoritative civic, economic, and institutional context. For science, explain research discoveries with clarity. For business, focus on market dynamics and consumer impact.\n"
+                "• BALANCED ATTRIBUTION: Naturally cite reporting sources or public records (e.g. 'According to reporting in The Hindu', 'As noted in official releases', 'Community debates emphasized...'). Do NOT rely on or repeatedly name Hacker News.\n"
                 "• SUBSTANCE & MOBILE READABILITY: Fast-paced, punchy, authoritative reporting (strictly 800–1,050 words, designed for under a 5-minute read time for mobile readers).\n"
                 "• CLEAN EDITORIAL PROSE & PARAGRAPH FLOW: Wrap every narrative paragraph in clean semantic <p> tags. Write in cohesive, comfortable paragraphs (3 to 5 sentences each) with standard left alignment and no awkward spaces, gaps, or empty line breaks.\n"
                 "• SUB-HEADINGS HIERARCHY: Structure sections with <h2> and indented subsections with <h3>. Always close tags with matching end tags (e.g. <h3>...</h3>).\n"
                 "• SEMANTIC HTML OUTPUT: Output ONLY semantic HTML content. Do NOT wrap in <html>, <body>, <head>, or <h1>.\n"
-                "• Begin immediately with a professional journalistic dateline inside a paragraph: <p><strong>SAN FRANCISCO —</strong> ...</p>"
+                "• Begin immediately with a natural journalistic dateline inside the first paragraph matching the actual location of the story: e.g. <p><strong>CHENNAI —</strong> ...</p>, <p><strong>NEW DELHI —</strong> ...</p>, <p><strong>LONDON —</strong> ...</p>, <p><strong>WASHINGTON —</strong> ...</p>"
             )},
             {"role": "user", "content": f"""
-Write a crisp, high-impact 800–1,050 word investigative article (under 5-minute read time) adhering strictly to this outline:
+Write a crisp, high-impact 800–1,050 word journalistic article (under 5-minute read time) adhering strictly to this outline:
 
 BESPOKE OUTLINE:
 {outline}
@@ -1473,13 +1946,13 @@ GROUND TRUTH INTEL & MULTI-SOURCE RESEARCH:
 STORY DETAILS:
 Headline: {topic['title']}
 Source: {topic.get('source')} ({topic.get('source_url')})
-Genre: {archetype['name']}
+Desk: {beat_info['name']}
 
 STRUCTURE INSTRUCTIONS:
-1. Lead Dateline Hook: Start with a strong bold dateline explaining what happened, why it matters today, and the primary tension.
+1. Lead Dateline Hook: Start with a strong bold dateline explaining what happened, why it matters today, and the primary context.
 2. Follow the 3-4 bespoke H2 headings generated in the outline. Under each H2, include 2 focused, analytical, information-dense paragraphs.
-3. Integrate 1-2 blockquotes with authentic source citations (referencing the actual reporting wire or community thread).
-4. Include an informative comparison or bulleted breakdown (`<ul><li>...</li></ul>`) detailing specifications, key milestones, or architectural trade-offs.
+3. Integrate 1-2 blockquotes with authentic source citations (referencing the actual reporting wire, state release, or community thread).
+4. Include an informative comparison or bulleted breakdown (`<ul><li>...</li></ul>`) detailing key milestones, specifications, or civic/market metrics.
 5. End with an analytical conclusion section focusing on upcoming milestones, unresolved questions, and the strategic road ahead.
 """}
         ]
@@ -1501,7 +1974,7 @@ STRUCTURE INSTRUCTIONS:
                     "You are the Senior Executive Editor of ReadContext. "
                     "Deepen the provided draft by adding 1-2 focused analytical paragraphs under existing sections. "
                     "Keep total article length strictly between 800 and 1,050 words so mobile reading time stays under 5 minutes. "
-                    "Incorporate technical nuances, user feedback, and real-world context. "
+                    "Incorporate technical, civic, or economic nuances, user feedback, and real-world context. "
                     "DO NOT repeat generic phrases like 'developer reactions' or 'economic trade-off'. "
                     "Output ONLY clean semantic HTML matching existing section headings."
                 )},
@@ -1516,34 +1989,48 @@ STRUCTURE INSTRUCTIONS:
                     word_count = cand_words
                     log("✅", f"Article expanded to mobile-optimized depth: {word_count} words")
 
-        # ── Step 3: Extract SEO Metadata ──────────────────────────────────
-        meta = self._generate_seo(topic, cleaned_body)
+        # ── Step 3: Wikipedia Entity Mapping (Hyperlink prominent entities to Wikipedia for deep informational context) ──
+        linker = WikipediaLinker()
+        cleaned_body, linked_entities = linker.link_entities_in_html(cleaned_body)
+        if linked_entities:
+            log("🔗", f"Wikipedia mapped {len(linked_entities)} entities: {', '.join(list(linked_entities)[:5])}")
 
-        # ── Step 4: Assemble Native ReadContext Presentation ───────────────
+        # ── Step 4: Extract SEO Metadata ──
+        meta = self._generate_seo(topic, cleaned_body, beat_info)
+
+        # ── Step 5: Assemble Native ReadContext Presentation ──
         final_layout = self._render_readcontext_layout(
             topic=topic,
             article_body=cleaned_body,
             images=images,
             research=research,
             meta=meta,
-            archetype=archetype
+            beat_info=beat_info,
+            is_high_priority=is_high_priority
         )
 
         return {
             "title": meta.get("headline", topic['title']),
             "html": final_layout,
             "meta_description": meta.get("description", topic['title'])[:160],
-            "tags": meta.get("tags", ['Technology', 'AI', 'Analysis']),
+            "tags": meta.get("tags", beat_info['labels'][:3]),
             "raw_text": cleaned_body,
-            "word_count": word_count
+            "word_count": word_count,
+            "beat": beat_key
         }
 
     def _sanitize_html(self, html_str):
-        """Clean wrappers and fix mismatched tags like <h3> ... </h2>."""
+        """Clean wrappers, fix mismatched tags, and prevent nested heading paragraphs."""
         clean = strip_html_wrappers(html_str)
+        # Fix nested <p> inside headings: e.g. <h3><p>Title</p></h3> -> <h3>Title</h3>
+        clean = re.sub(r'<h([23])([^>]*)>\s*<p>(.*?)</p>\s*</h\1>', r'<h\1\2>\3</h\1>', clean, flags=re.IGNORECASE | re.DOTALL)
+        # Fix unclosed <h3> or <h2> before another block tag like <ul>, <ol>, <p>, <blockquote>, <h[23]>
+        clean = re.sub(r'<h([23])([^>]*)>([^<]+?)(?=\n*<(?:ul|ol|p|blockquote|h[23]))', r'<h\1\2>\3</h\1>\n', clean, flags=re.IGNORECASE)
         # Fix mismatched <h3> ... </h2>
         clean = re.sub(r'<h3([^>]*)>(.*?)</h2>', r'<h3\1>\2</h3>', clean, flags=re.IGNORECASE | re.DOTALL)
         clean = re.sub(r'<h2([^>]*)>(.*?)</h3>', r'<h2\1>\2</h2>', clean, flags=re.IGNORECASE | re.DOTALL)
+        # Fix nested <p> tags: <p>Text <p>Inner</p></p>
+        clean = re.sub(r'<p>\s*<p>(.*?)</p>\s*</p>', r'<p>\1</p>', clean, flags=re.IGNORECASE | re.DOTALL)
         # Remove empty headings or paragraphs
         clean = re.sub(r'<p>\s*</p>', '', clean)
         clean = re.sub(r'<h[23]>\s*</h[23]>', '', clean)
@@ -1611,7 +2098,7 @@ STRUCTURE INSTRUCTIONS:
 
         return takeaways[:4]
 
-    def _generate_seo(self, topic, body):
+    def _generate_seo(self, topic, body, beat_info=None):
         prompt = [
             {"role": "system", "content": "You are a senior digital news SEO editor. Output strict JSON only."},
             {"role": "user", "content": f"""
@@ -1636,14 +2123,15 @@ Respond in JSON format:
                     return json.loads(m.group(0))
         except Exception:
             pass
+        default_tags = beat_info.get("labels", ["News", "Analysis"])[:4] if beat_info else extract_keywords(topic['title'])[:5]
         return {
             "headline": topic['title'],
             "dek": topic.get('description', '')[:120],
             "description": (topic.get('description') or topic['title'])[:155],
-            "tags": extract_keywords(topic['title'])[:5]
+            "tags": default_tags
         }
 
-    def _render_readcontext_layout(self, topic, article_body, images, research, meta, archetype):
+    def _render_readcontext_layout(self, topic, article_body, images, research, meta, beat_info, is_high_priority=False):
         """
         Creates a custom responsive newspaper layout tailored for readcontext.blogspot.com:
         Warm orange accents (#F36C21), clean modern web typography (no huge tab indents, no excessive gaps),
@@ -1684,17 +2172,38 @@ Respond in JSON format:
             </div>
             '''
 
-        # Secondary Image Frame (Short clean context + source at the corner)
-        secondary_img_html = ""
-        if len(images) > 1:
+        # Contextual Secondary Image (Only for High-Priority Stories, neatly placed inside the narrative body)
+        if is_high_priority and len(images) > 1:
             sec = images[1]
-            sec_caption = sec.get('caption', 'Supporting analysis').strip()
+            sec_caption = sec.get('caption', 'Contextual documentation').strip()
             sec_caption = re.sub(r'^\d+[\.\)]\s*', '', sec_caption)
             sec_caption = re.sub(r'^[📸📷]\s*', '', sec_caption)
             if len(sec_caption) > 65:
                 sec_caption = sec_caption[:62].rsplit(' ', 1)[0] + '...'
             sec_source = sec.get('source', 'Editorial Archive').strip()
             if len(sec_source) > 25:
+                sec_source = sec_source[:22] + '...'
+
+            secondary_img_html = f'''
+            <div style="margin:26px 0; text-align:center;">
+                <figure style="margin:0; padding:0;">
+                    <img src="{sec['url']}" alt="{headline} - Detailed Documentation"
+                         style="width:100%; max-height:420px; object-fit:cover; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.06); display:block;"
+                         loading="lazy" />
+                    <figcaption style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#777; margin-top:8px; padding:0 4px;">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; text-align:left;">{sec_caption}</span>
+                        <span style="font-style:italic; font-size:11.5px; white-space:nowrap; color:#999; margin-left:12px;">Source: {sec_source}</span>
+                    </figcaption>
+                </figure>
+            </div>
+            '''
+            # Insert secondary image inside article body right before the second <h2>
+            h2_matches = list(re.finditer(r'<h2\b', article_body, flags=re.IGNORECASE))
+            if len(h2_matches) >= 2:
+                insert_pos = h2_matches[1].start()
+                article_body = article_body[:insert_pos] + secondary_img_html + "\n\n" + article_body[insert_pos:]
+            else:
+                article_body += "\n" + secondary_img_html
                 sec_source = sec_source[:22] + '...'
 
             secondary_img_html = f'''
@@ -1851,7 +2360,7 @@ Respond in JSON format:
             "dateModified": iso_date,
             "author": [{
                 "@type": "Organization",
-                "name": "ReadContext Special Bureau",
+                "name": "ReadContext Newsroom",
                 "url": BLOG_URL
             }],
             "publisher": {
@@ -1869,6 +2378,7 @@ Respond in JSON format:
         })
 
         dek_text = meta.get('dek', topic.get('description', '')).strip()
+        kicker_text = beat_info.get("kicker", "NEWS DESK · SPECIAL REPORT")
 
         html = f'''<div class="readcontext-article">
 
@@ -1880,14 +2390,14 @@ Respond in JSON format:
     <!-- Editorial Kicker (Source name kept in backend only, never exposed at top) -->
     <div style="margin-bottom:12px;">
         <span style="display:inline-block; font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:1.5px; color:#F36C21; background:rgba(243,108,33,0.1); padding:4px 12px; border-radius:30px;">
-            SPECIAL REPORT · {archetype['name'].upper()}
+            {kicker_text}
         </span>
     </div>
 
     <!-- Byline & Full Published Date & Time (Reading time and resonance scores removed) -->
     <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; padding:10px 0; border-top:1px solid rgba(0,0,0,0.08); border-bottom:1px solid rgba(0,0,0,0.08); margin-bottom:20px; font-size:13px; color:#666;">
         <div>
-            By <strong style="color:#222;">ReadContext Special Bureau</strong>
+            By <strong style="color:#222;">ReadContext Newsroom</strong>
         </div>
         <div>
             📅 <span>Published on {now.strftime("%B %d, %Y · %I:%M %p UTC")}</span>
@@ -1901,9 +2411,6 @@ Respond in JSON format:
     <div class="article-content">
         {article_body}
     </div>
-
-    <!-- Secondary Visual -->
-    {secondary_img_html}
 
     <!-- Related Documentation & Research on the Internet (No Repeating Brands) -->
     {citations_html}
@@ -2045,7 +2552,17 @@ class BloggerPublisher:
         if not service:
             return False, "Blogger authentication failed"
 
-        labels = ["Technology", "AI", "Investigative", "ReadContext"] + article.get("tags", [])[:3]
+        beat = article.get("beat", "technology")
+        beat_label_map = {
+            "tamil_nadu": ["Tamil Nadu", "Regional News", "India", "Governance"],
+            "india_national": ["India", "National Affairs", "Public Policy", "Governance"],
+            "world_news": ["World News", "Global Affairs", "Diplomacy", "International"],
+            "science": ["Science", "Space", "Discovery", "Research"],
+            "business": ["Business", "Markets", "Economy", "Finance"],
+            "culture": ["Culture", "Society", "Arts", "Living"],
+            "technology": ["Technology", "Innovation", "Computing", "Digital"]
+        }
+        labels = beat_label_map.get(beat, ["News", "ReadContext"]) + article.get("tags", [])[:3]
         labels = [re.sub(r'[^\w\s-]', '', lab).strip() for lab in labels if lab]
 
         body = {
@@ -2230,11 +2747,19 @@ def main():
         log("❌", "No compliant stories could be collected across platforms. Aborting.")
         sys.exit(1)
 
-    # Pick the top safe story by resonance & virality
-    selected_topic = stories[0]
-    log("🎯", f"Selected Top Compliant Story: '{selected_topic['title']}'")
-    log("📌", f"Source: {selected_topic['source']} | Virality Score: {selected_topic.get('virality_score', 0)}")
+    # 4. Subject Fatigue Tracking & Multi-Beat Lead Story Selection
+    fatigue_tracker = SubjectFatigueTracker(posts_dir=POSTS_DIR, posts_log=posts_log)
+    editorial_director = EditorialDirector(ai_client)
+
+    selected_topic = editorial_director.curate_lead_story(stories, fatigue_tracker)
+    if not selected_topic:
+        log("⚠️", "Editorial Director could not select from pool. Falling back to top story.")
+        selected_topic = stories[0]
+
+    log("🎯", f"Selected Edition Lead Story: '{selected_topic['title']}'")
+    log("📌", f"Desk: {selected_topic.get('beat', 'general').upper()} | Source: {selected_topic['source']}")
     log("🔗", f"Reference URL: {selected_topic.get('source_url')}")
+    log("⭐", f"Editorial Priority: {'HIGH PRIORITY (Contextual Subtopic Photo Enabled)' if selected_topic.get('is_high_priority') else 'STANDARD PRIORITY (Hero Visual Focused)'}")
 
     # 4. Deep Research (Multi-source Web scraping, Reddit discussions, HN, Lemmy, and cross-web wires)
     dossier = researcher.deep_research(selected_topic, candidate_pool=stories)
